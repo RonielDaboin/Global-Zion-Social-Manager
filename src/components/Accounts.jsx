@@ -1,0 +1,111 @@
+import { useState } from 'react'
+import { useApp } from '../lib/store.jsx'
+import { t, useLang } from '../lib/i18n.jsx'
+import { PLATFORMS, EMAIL_PROVIDERS, accountLabel } from '../lib/formats.js'
+import { isRealMode, startRealOAuth } from '../lib/social.js'
+import { fmtDate } from './ui.jsx'
+
+const BLURB = {
+  instagram: 'Publica posts, stories y reels en tu cuenta profesional de Instagram.',
+  tiktok: 'Publica fotos y videos en tu cuenta de TikTok.',
+  facebook: 'Publica en tu página de Facebook.',
+  twitter: 'Publica posts en tu cuenta de X (Twitter).',
+  whatsapp: 'Envía mensajes e imágenes desde tu WhatsApp personal.',
+  'whatsapp-business': 'Envía mensajes y catálogos con la API de WhatsApp Business.',
+  email: 'Envía correos y newsletters con Gmail, Outlook u otro gestor de correo.',
+}
+const valid = (p, v, prov) => {
+  const x = v.trim()
+  if (p.kind === 'phone') return x.replace(/\D/g, '').length >= 8
+  if (p.kind === 'email') return /^\S+@\S+\.\S+$/.test(x) && Boolean(prov)
+  return x.replace('@', '').length >= 2
+}
+
+export default function Accounts() {
+  const { accounts, connectAccount, disconnectAccount, notify } = useApp()
+  useLang()
+  const [modal, setModal] = useState(null) // platform id
+  const [user, setUser] = useState('')
+  const [step, setStep] = useState(0)
+  const [prov, setProv] = useState('gmail')
+
+  const open = (p) => {
+    if (isRealMode(p)) return startRealOAuth(p)
+    setUser(''); setStep(0); setProv('gmail'); setModal(p)
+  }
+  const authorize = () => {
+    setStep(1)
+    setTimeout(() => {
+      const k = PLATFORMS[modal].kind
+      const u = k === 'user' ? user.replace('@', '').trim() : user.trim()
+      connectAccount(modal, { username: u, name: u, demo: true, provider: k === 'email' ? prov : undefined })
+      notify(t('{u} conectada en {p}', { u: k === 'user' ? '@' + u : u, p: PLATFORMS[modal].name }))
+      setModal(null)
+    }, 1200)
+  }
+
+  return (
+    <div className="page">
+      <header className="ph"><h1>{t('Cuentas conectadas')}</h1><p>{t('Inicia sesión con tus redes para controlar las publicaciones.')}</p></header>
+      <div className="cards2">
+        {Object.values(PLATFORMS).map((p) => {
+          const acc = accounts[p.id]
+          return (
+            <div className="card acc" key={p.id} style={{ '--pc': p.color }}>
+              <div className="acc-top">
+                <div className="acc-ico">{p.ico}</div>
+                <div><h3>{p.name}</h3><p>{t(BLURB[p.id])}</p></div>
+              </div>
+              {acc ? (
+                <>
+                  <div className="acc-info">
+                    <div className="avatar">{acc.username[0]?.toUpperCase()}</div>
+                    <div><b>{accountLabel(p, acc)}</b><small>{acc.provider ? EMAIL_PROVIDERS.find((e) => e.id === acc.provider)?.name + ' · ' : ''}{t('Conectada')} · {fmtDate(acc.connectedAt)}{acc.demo ? ' · ' + t('modo demo') : ''}</small></div>
+                    <span className="dot on" />
+                  </div>
+                  <button className="btn ghost" onClick={() => { disconnectAccount(p.id); notify(t('Cuenta desconectada')) }}>{t('Desconectar')}</button>
+                </>
+              ) : (
+                <button className="btn primary" onClick={() => open(p.id)}>{t('Iniciar sesión con {p}', { p: p.name })}</button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="card note">
+        <h3>ℹ️ {t('Sobre la conexión real')}</h3>
+        <p>
+          {t('Sin credenciales configuradas, la app funciona en modo demo: la autorización y la publicación se simulan en tu navegador.')}{' '}
+          {t('Para publicar de verdad necesitas registrar tu app en Meta for Developers (Instagram, Facebook y WhatsApp Cloud API), TikTok for Developers y X Developer Portal, conectar tu gestor de correo (Gmail API, Microsoft Graph o SMTP) en el backend, definir las claves en .env y desplegar un pequeño backend que guarde los tokens. Los pasos están en el README.md.')}
+        </p>
+      </div>
+
+      {modal && (
+        <div className="modal-bg" onClick={() => step === 0 && setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ '--pc': PLATFORMS[modal].color }}>
+            <div className="acc-ico">{PLATFORMS[modal].ico}</div>
+            <h3>{t('Iniciar sesión con {p}', { p: PLATFORMS[modal].name })}</h3>
+            <p className="muted">{t('Simulación de autorización (modo demo). GLOBAL ZION solicitaría permiso para publicar contenido en tu nombre.')}</p>
+            {step === 0 ? (
+              <>
+                {PLATFORMS[modal].kind === 'email' && (
+                  <label>{t('Gestor de correo')}<select value={prov} onChange={(e) => setProv(e.target.value)}>{EMAIL_PROVIDERS.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+                )}
+                <label>
+                  {PLATFORMS[modal].kind === 'phone' ? t('Número con código de país') : PLATFORMS[modal].kind === 'email' ? t('Correo electrónico') : t('Usuario')}
+                  <input autoFocus value={user} onChange={(e) => setUser(e.target.value)}
+                    placeholder={PLATFORMS[modal].kind === 'phone' ? '+56 9 1234 5678' : PLATFORMS[modal].kind === 'email' ? 'tu@correo.com' : '@tu_usuario'} />
+                </label>
+                <div className="row end">
+                  <button className="btn ghost" onClick={() => setModal(null)}>{t('Cancelar')}</button>
+                  <button className="btn primary" disabled={!valid(PLATFORMS[modal], user, prov)} onClick={authorize}>{t('Autorizar')}</button>
+                </div>
+              </>
+            ) : <div className="spin">{t('Autorizando…')}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
