@@ -74,7 +74,7 @@ export function AppProvider({ children }) {
     if (error) throw authErr(error)
   }
   const loginWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } } })
     if (error) throw authErr(error)
   }
   const logout = async () => { await supabase.auth.signOut(); setAccounts({}); setPosts([]) }
