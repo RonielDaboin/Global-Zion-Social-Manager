@@ -37,6 +37,7 @@ const EN = {
   'Inicia sesión': 'Sign in',
   'Cancelar': 'Cancel',
   'No se pudo localizar la publicación en Instagram; búscala en tu perfil.': 'Could not find the post on Instagram; look for it on your profile.',
+  'Buscando en Instagram…': 'Looking on Instagram…',
   '¿Eliminar publicación?': 'Delete post?',
   '¿Dónde quieres eliminarla?': 'Where do you want to delete it?',
   'Solo en la app': 'Only in the app',

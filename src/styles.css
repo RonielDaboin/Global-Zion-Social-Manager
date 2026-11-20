@@ -38,6 +38,7 @@ code { background: var(--bg2); padding: 1px 6px; border-radius: 6px; font-size: 
 
 /* Botones */
 .btn { border: 1px solid var(--line); background: var(--card); padding: 10px 16px; border-radius: 10px; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; justify-content: center; transition: .15s; }
+a.btn { text-decoration: none; }
 .btn:hover:not(:disabled) { border-color: var(--violet); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary { background: var(--grad); color: var(--on-primary); border: 0; }
