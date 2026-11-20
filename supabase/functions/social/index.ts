@@ -22,6 +22,8 @@ class HttpError extends Error {
 const GRAPH = 'https://graph.facebook.com/v21.0'
 const env = (k: string) => Deno.env.get(k) || ''
 const META = { id: env('META_APP_ID'), secret: env('META_APP_SECRET') }
+// ID de la configuración de Facebook Login for Business (no es secreto)
+const META_CONFIG_ID = env('META_CONFIG_ID') || '1127819070150160'
 const GOOGLE = { id: env('GOOGLE_CLIENT_ID'), secret: env('GOOGLE_CLIENT_SECRET') }
 const configured = {
   instagram: Boolean(META.id && META.secret),
@@ -81,6 +83,13 @@ function authUrl(platform: string, redirectUri: string, state: string) {
       access_type: 'offline', prompt: 'consent select_account',
     })
   }
+  // Facebook Login for Business: usa una "configuración" (config_id) en lugar de scope.
+  if (META_CONFIG_ID) {
+    return 'https://www.facebook.com/v21.0/dialog/oauth?' + qs({
+      client_id: META.id, redirect_uri: redirectUri, response_type: 'code', state,
+      config_id: META_CONFIG_ID, override_default_response_type: 'true',
+    })
+  }
   return 'https://www.facebook.com/v21.0/dialog/oauth?' + qs({ client_id: META.id, redirect_uri: redirectUri, response_type: 'code', state, scope: SCOPES[platform] })
 }
 
@@ -97,8 +106,45 @@ async function connectMeta(uid: string, platform: string, code: string, redirect
     fields: 'id,name,access_token,picture{url},instagram_business_account{id,username,name,profile_picture_url}',
     access_token: long.access_token,
   }))
-  const list = pages.data || []
-  if (!list.length) throw new HttpError(400, 'No se encontró ninguna página de Facebook administrada por esta cuenta')
+  let list = pages.data || []
+  if (!list.length) {
+    // /me/accounts puede venir vacío con Páginas de un portfolio: se leen las que el usuario autorizó (granular scopes).
+    const dbg = await getJson(`${GRAPH}/debug_token?` + qs({ input_token: long.access_token, access_token: `${META.id}|${META.secret}` })).catch(() => ({ data: {} }))
+    const ids = new Set<string>()
+    for (const g of dbg.data?.granular_scopes || []) {
+      if (/^(pages_|instagram_)/.test(g.scope)) for (const t of g.target_ids || []) ids.add(String(t))
+    }
+    const fields = 'id,name,access_token,picture{url},instagram_business_account{id,username,name,profile_picture_url}'
+    for (const id of ids) {
+      const p = await getJson(`${GRAPH}/${id}?` + qs({ fields, access_token: long.access_token })).catch(() => null)
+      if (p?.access_token) list.push(p)
+    }
+  }
+  if (!list.length) {
+    // Páginas propiedad de un portfolio (requiere business_management): /me/businesses -> owned_pages / client_pages
+    const fields = 'id,name,access_token,picture{url},instagram_business_account{id,username,name,profile_picture_url}'
+    const biz = await getJson(`${GRAPH}/me/businesses?` + qs({ fields: 'id', access_token: long.access_token })).catch(() => ({ data: [] }))
+    const seen = new Set<string>()
+    for (const b of biz.data || []) {
+      for (const edge of ['owned_pages', 'client_pages']) {
+        const r = await getJson(`${GRAPH}/${b.id}/${edge}?` + qs({ fields: 'id', access_token: long.access_token })).catch(() => ({ data: [] }))
+        for (const pg of r.data || []) {
+          if (seen.has(pg.id)) continue
+          seen.add(pg.id)
+          const p = await getJson(`${GRAPH}/${pg.id}?` + qs({ fields, access_token: long.access_token })).catch(() => null)
+          if (p?.access_token) list.push(p)
+        }
+      }
+    }
+  }
+  if (!list.length) {
+    const me = await getJson(`${GRAPH}/me?` + qs({ fields: 'id,name', access_token: long.access_token })).catch(() => ({}))
+    const perms = await getJson(`${GRAPH}/me/permissions?` + qs({ access_token: long.access_token })).catch(() => ({ data: [] }))
+    const granted = (perms.data || []).filter((p: { status: string }) => p.status === 'granted').map((p: { permission: string }) => p.permission).join(',')
+    const dbg2 = await getJson(`${GRAPH}/debug_token?` + qs({ input_token: long.access_token, access_token: `${META.id}|${META.secret}` })).catch(() => ({ data: {} }))
+    const gran = JSON.stringify(dbg2.data?.granular_scopes || [])
+    throw new HttpError(400, `No se encontró ninguna página de Facebook administrada por esta cuenta (usuario: ${me.name || '?'} id ${me.id || '?'} · permisos: ${granted || 'ninguno'} · granular: ${gran} · tipo: ${dbg2.data?.type || '?'}).`)
+  }
   if (platform === 'facebook') {
     const p = list[0]
     const avatar = p.picture?.data?.url || null
