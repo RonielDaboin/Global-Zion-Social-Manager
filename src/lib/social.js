@@ -1,99 +1,90 @@
 /**
  * Capa de integración con redes sociales.
  *
- * MODO DEMO (por defecto): la autorización y la publicación se simulan localmente.
- * MODO REAL: define VITE_INSTAGRAM_CLIENT_ID / VITE_TIKTOK_CLIENT_KEY / VITE_API_BASE en .env.
- *  - connect() redirige al diálogo OAuth oficial.
- *  - Tu backend (VITE_API_BASE) debe intercambiar el `code` por un token (el client secret
- *    NUNCA debe estar en el navegador) y exponer POST /publish. Ver README.md.
+ * Conexión y publicación REALES a través de la Edge Function `social` de Supabase
+ * (Instagram, Facebook y Gmail). Los tokens nunca llegan al navegador.
+ * Las redes que el servidor aún no tiene configuradas funcionan en MODO DEMO (simulado).
  */
 import { t, getLang } from './i18n.jsx'
+import { loadVideo } from './mediaStore.js'
+import { supabase } from './supabase.js'
 
 const env = import.meta.env
 
-export const OAUTH = {
-  instagram: {
-    clientId: env.VITE_INSTAGRAM_CLIENT_ID,
-    authUrl: 'https://www.instagram.com/oauth/authorize',
-    scope: 'instagram_business_basic,instagram_business_content_publish',
-  },
-  tiktok: {
-    clientId: env.VITE_TIKTOK_CLIENT_KEY,
-    authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
-    scope: 'user.info.basic,video.publish,video.upload',
-  },
-  facebook: {
-    clientId: env.VITE_FACEBOOK_APP_ID,
-    authUrl: 'https://www.facebook.com/v19.0/dialog/oauth',
-    scope: 'pages_show_list,pages_manage_posts,pages_read_engagement',
-  },
-  twitter: {
-    clientId: env.VITE_TWITTER_CLIENT_ID,
-    authUrl: 'https://twitter.com/i/oauth2/authorize',
-    scope: 'tweet.read tweet.write users.read offline.access',
-  },
-  // WhatsApp (Cloud API / Business) y correo (Gmail API, Microsoft Graph, SMTP) no usan OAuth en el navegador:
-  // se configuran en el backend (VITE_API_BASE). Hasta entonces funcionan en modo demo.
+/** Llama a la Edge Function `social` y devuelve el JSON (lanza Error con el mensaje del servidor). */
+export async function socialCall(action, body = {}) {
+  const { data, error } = await supabase.functions.invoke('social', { body: { action, ...body } })
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
 }
 
-export const API_BASE = env.VITE_API_BASE || ''
-export const isRealMode = (platform) => Boolean(OAUTH[platform]?.clientId && API_BASE)
+/** { configured: {instagram, facebook, email}, accounts: [...] } o null si el servidor no responde. */
+export const fetchSocial = () => socialCall('list').catch(() => null)
 
-export function startRealOAuth(platform) {
-  const cfg = OAUTH[platform]
-  const redirect = window.location.origin + '/'
-  const state = platform + ':' + Math.random().toString(36).slice(2)
+export async function startRealOAuth(platform) {
+  const { url, state } = await socialCall('auth-url', { platform, redirectUri: window.location.origin + '/' })
   sessionStorage.setItem('gz_oauth_state', state)
-  const base = { scope: cfg.scope, response_type: 'code', redirect_uri: redirect, state }
-  let params
-  if (platform === 'tiktok') params = { client_key: cfg.clientId, ...base }
-  else if (platform === 'twitter') {
-    const verifier = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2)).join('')
-    sessionStorage.setItem('gz_oauth_verifier', verifier)
-    params = { client_id: cfg.clientId, ...base, code_challenge: verifier, code_challenge_method: 'plain' }
-  } else params = { client_id: cfg.clientId, ...base }
-  const p = new URLSearchParams(params)
-  window.location.href = `${cfg.authUrl}?${p}`
+  window.location.href = url
 }
 
-/** Si volvemos de OAuth con ?code=, lo canjeamos en el backend. */
+/** Si volvemos de OAuth con ?code=, lo canjeamos en el servidor. */
 export async function handleOAuthCallback() {
   const q = new URLSearchParams(window.location.search)
   const code = q.get('code'), state = q.get('state')
   if (!code || !state) return null
   if (state !== sessionStorage.getItem('gz_oauth_state')) return null
-  const platform = state.split(':')[0]
+  sessionStorage.removeItem('gz_oauth_state')
   window.history.replaceState({}, '', '/')
-  const r = await fetch(`${API_BASE}/auth/${platform}/callback`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, redirectUri: window.location.origin + '/', codeVerifier: sessionStorage.getItem('gz_oauth_verifier') || undefined }),
-  })
-  if (!r.ok) throw new Error(t('No se pudo completar la autorización'))
-  const data = await r.json() // { username, name, avatar, accountId }
-  return { platform, ...data }
+  const data = await socialCall('callback', { code, state, redirectUri: window.location.origin + '/' })
+  return { real: true, ...data }
+}
+
+/** Sube la imagen/video a Storage (bucket público) para que Instagram/Facebook puedan descargarlos. */
+async function uploadMedia(post, kind) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error(t('Inicia sesión para continuar'))
+  let blob, ext
+  if (kind === 'video') {
+    blob = await loadVideo(post.id)
+    if (!blob) throw new Error(t('No se encontró el video guardado'))
+    ext = (blob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov')
+  } else {
+    blob = await (await fetch(post.image)).blob()
+    ext = blob.type === 'image/png' ? 'png' : 'jpg'
+  }
+  const path = `${session.user.id}/${post.id}-${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('post-media').upload(path, blob, { contentType: blob.type, upsert: true })
+  if (error) throw new Error(error.message)
+  return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
 }
 
 export async function publishPost(post, accounts) {
-  const targets = post.platforms
   const results = {}
-  for (const p of targets) {
+  const media = {} // se sube una sola vez por publicación
+  for (const p of post.platforms) {
     const acc = accounts[p]
     if (!acc) { results[p] = { ok: false, error: t('Cuenta no conectada') }; continue }
-    if (acc.demo || !API_BASE) {
+    if (!acc.real) {
       await new Promise((r) => setTimeout(r, 700))
       results[p] = { ok: true, demo: true }
-    } else {
-      try {
-        const r = await fetch(`${API_BASE}/publish`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ platform: p, accountId: acc.accountId, caption: post.caption, image: post.image, subject: post.subject, recipients: post.recipients }),
-        })
-        results[p] = r.ok ? { ok: true } : { ok: false, error: 'Error ' + r.status }
-      } catch (e) {
-        results[p] = { ok: false, error: e.message }
-      }
+      continue
+    }
+    try {
+      const isVideo = post.mediaType === 'video'
+      if (isVideo) media.videoUrl ||= await uploadMedia(post, 'video')
+      else if (post.image) media.imageUrl ||= await uploadMedia(post, 'image')
+      await socialCall('publish', {
+        platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
+        mediaType: post.mediaType || 'photo', format: post.format, ...media,
+      })
+      results[p] = { ok: true }
+    } catch (e) {
+      results[p] = { ok: false, error: e.message }
     }
   }
   return results
@@ -145,6 +136,36 @@ export function generateCaption(topic, tone) {
   const T = (TONES[getLang()] || TONES.es)[tone]
   const tp = topic.trim() || t('nuestro contenido')
   return `${pick(T.open).replaceAll('{t}', tp)}\n\n${t('{topic} es parte de lo que nos mueve en GLOBAL ZION.', { topic: tp.charAt(0).toUpperCase() + tp.slice(1) })}\n\n${pick(T.close)}`
+}
+
+/** Reduce una imagen (dataURL) para enviarla a Gemini sin gastar ancho de banda. */
+export function shrinkImage(dataUrl, max = 768) {
+  return new Promise((res) => {
+    const im = new Image()
+    im.onload = () => {
+      const s = Math.min(1, max / Math.max(im.width, im.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(im.width * s); c.height = Math.round(im.height * s)
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height)
+      res(c.toDataURL('image/jpeg', 0.8))
+    }
+    im.onerror = () => res(null)
+    im.src = dataUrl
+  })
+}
+
+/** Genera el texto con Gemini a través de la Edge Function `generate-caption` (la API key nunca está en el navegador). */
+export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags, mediaType, image }) {
+  const { data, error } = await supabase.functions.invoke('generate-caption', {
+    body: { topic, tone, networks, maxLen, maxTags, mediaType, image, lang: getLang() },
+  })
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  if (!data?.caption) throw new Error(data?.error || t('La IA no devolvió texto'))
+  return data.caption
 }
 
 export function suggestHashtags(topic) {

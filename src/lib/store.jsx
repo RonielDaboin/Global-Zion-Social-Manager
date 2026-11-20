@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
-import { publishPost, handleOAuthCallback } from './social.js'
+import { publishPost, handleOAuthCallback, fetchSocial, socialCall } from './social.js'
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
+import { deleteVideo } from './mediaStore.js'
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -22,6 +23,7 @@ export function AppProvider({ children }) {
 
   const key = session ? session.id : 'anon'
   const [accounts, setAccounts] = useState({})
+  const [social, setSocial] = useState({ configured: {}, ready: false }) // redes configuradas en el servidor
   const [posts, setPosts] = useState([])
   const [draft, setDraft] = useState(null) // post en edición en el composer
   const loadedFor = useRef(null)
@@ -31,9 +33,20 @@ export function AppProvider({ children }) {
     setAccounts(read(`gz_accounts_${key}`, {}))
     setPosts(read(`gz_posts_${key}`, []))
     loadedFor.current = key
+    // Cuentas reales (tokens en el servidor) + qué redes están configuradas
+    fetchSocial().then((r) => {
+      if (!r || loadedFor.current !== key) return
+      setSocial({ configured: r.configured || {}, ready: true })
+      const real = Object.fromEntries((r.accounts || []).map((x) => [x.platform, {
+        real: true, accountId: x.account_id, username: x.username || x.name || '', name: x.name, avatar: x.avatar,
+        provider: x.extra?.provider, connectedAt: new Date(x.connected_at).getTime(),
+      }]))
+      setAccounts((a) => ({ ...Object.fromEntries(Object.entries(a).filter(([, v]) => !v.real)), ...real }))
+    })
   }, [key, session])
 
-  useEffect(() => { if (loadedFor.current === key) write(`gz_accounts_${key}`, accounts) }, [accounts, key])
+  // Solo las cuentas demo se guardan en el navegador; las reales viven en el servidor
+  useEffect(() => { if (loadedFor.current === key) write(`gz_accounts_${key}`, Object.fromEntries(Object.entries(accounts).filter(([, v]) => !v.real))) }, [accounts, key])
   useEffect(() => {
     if (loadedFor.current === key) setStorageFull(!write(`gz_posts_${key}`, posts))
   }, [posts, key])
@@ -81,28 +94,37 @@ export function AppProvider({ children }) {
 
   // ---- Cuentas sociales ----
   const connectAccount = (platform, data) => setAccounts((a) => ({ ...a, [platform]: { ...data, connectedAt: Date.now() } }))
-  const disconnectAccount = (platform) => setAccounts((a) => { const n = { ...a }; delete n[platform]; return n })
+  const disconnectAccount = async (platform) => {
+    if (accountsRef.current[platform]?.real) {
+      try { await socialCall('disconnect', { platform }) } catch (e) { notify(e.message, 'err'); return false }
+    }
+    setAccounts((a) => { const n = { ...a }; delete n[platform]; return n })
+    return true
+  }
 
   useEffect(() => {
     if (!session) return
     handleOAuthCallback()
-      .then((r) => { if (r) { connectAccount(r.platform, r); notify(t('Cuenta de {p} conectada', { p: r.platform })) } })
+      .then((r) => { if (r) { connectAccount(r.platform, { ...r, accountId: r.username }); notify(t('Cuenta de {p} conectada', { p: r.platform })) } })
       .catch((e) => notify(e.message, 'err'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
   // ---- Publicaciones ----
-  const savePost = (p) => {
+  const me = session ? { name: session.name, email: session.email } : null
+  const savePost = (p0) => {
+    const p = p0.author || !me ? p0 : { ...p0, author: me } // quién creó la publicación
     setPosts((list) => {
       const i = list.findIndex((x) => x.id === p.id)
       if (i >= 0) { const n = [...list]; n[i] = p; return n }
       return [p, ...list]
     })
   }
-  const deletePost = (id) => setPosts((l) => l.filter((p) => p.id !== id))
+  const deletePost = (id) => { deleteVideo(id); setPosts((l) => l.filter((p) => p.id !== id)) }
 
   const postsRef = useRef(posts); postsRef.current = posts
   const accountsRef = useRef(accounts); accountsRef.current = accounts
+  const meRef = useRef(me); meRef.current = me
 
   const publishNow = useCallback(async (id) => {
     const post = postsRef.current.find((p) => p.id === id)
@@ -111,7 +133,7 @@ export function AppProvider({ children }) {
     const results = await publishPost(post, accountsRef.current)
     const allOk = Object.values(results).every((r) => r.ok)
     setPosts((l) => l.map((p) => (p.id === id
-      ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt }
+      ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }
       : p)))
     const demo = Object.values(results).some((r) => r.demo)
     if (allOk) notify(demo ? t('Publicado (modo demo: simulado)') : t('¡Publicado con éxito!'))
@@ -131,7 +153,7 @@ export function AppProvider({ children }) {
 
   const value = {
     session, authReady, register, login, loginWithGoogle, logout,
-    accounts, connectAccount, disconnectAccount,
+    accounts, connectAccount, disconnectAccount, social,
     posts, savePost, deletePost, publishNow,
     draft, setDraft,
     toast, notify, storageFull,

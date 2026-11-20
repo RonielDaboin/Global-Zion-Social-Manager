@@ -18,15 +18,20 @@ const NAV = [
 ]
 
 export default function App() {
-  const { session, authReady, logout, toast, storageFull, setDraft } = useApp()
-  const [page, setPage] = useState('dashboard')
+  const { session, authReady, logout, toast, storageFull, setDraft, draft } = useApp()
+  const [page, setPageRaw] = useState(() => { try { return sessionStorage.getItem('gz_page') || 'dashboard' } catch { return 'dashboard' } })
+  const setPage = (p) => { try { sessionStorage.setItem('gz_page', p) } catch { /* ignore */ } setPageRaw(p) }
+  const [composerKey, setComposerKey] = useState(0)
   useLang()
 
   if (!authReady) return null
   if (!session) return <><Login />{toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}</>
 
-  const go = (p) => { if (p === 'composer') setDraft(null); setPage(p) }
-  const edit = (post) => { setDraft(post); setPage('composer') }
+  const go = (p) => {
+    // 'composer-new' empieza una publicación nueva; 'composer' (menú lateral) retoma el trabajo en curso
+    if (p === 'composer-new') { try { sessionStorage.removeItem('gz_edit') } catch { /* ignore */ } setDraft(null); setPage('composer') } else setPage(p)
+  }
+  const edit = (post) => { try { sessionStorage.setItem('gz_edit', post.id) } catch { /* ignore */ } setDraft(post); setPage('composer') }
 
   return (
     <div className="shell">
@@ -48,9 +53,17 @@ export default function App() {
         </div>
       </aside>
       <main className="main">
+        <div className="mbar">
+          <Logo />
+          <div className="mbar-act">
+            <LangToggle />
+            <ThemeToggle />
+            <button className="icon-btn" title={t('Cerrar sesión')} aria-label={t('Cerrar sesión')} onClick={logout}><Icon name="out" /></button>
+          </div>
+        </div>
         {storageFull && <div className="banner err">{t('El almacenamiento del navegador está lleno: elimina publicaciones antiguas con imágenes.')}</div>}
         {page === 'dashboard' && <Dashboard go={go} edit={edit} />}
-        {page === 'composer' && <Composer onDone={() => setPage('posts')} />}
+        {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} />}
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}
         {page === 'accounts' && <Accounts />}

@@ -1,6 +1,38 @@
 import { useState } from 'react'
 import { PLATFORMS } from '../lib/formats.js'
 import { t, useLang, locale } from '../lib/i18n.jsx'
+// Logos oficiales de las marcas (paquete simple-icons); se importan como texto SVG y se extrae su trazo.
+import igSvg from 'simple-icons/icons/instagram.svg?raw'
+import ttSvg from 'simple-icons/icons/tiktok.svg?raw'
+import fbSvg from 'simple-icons/icons/facebook.svg?raw'
+import xSvg from 'simple-icons/icons/x.svg?raw'
+import waSvg from 'simple-icons/icons/whatsapp.svg?raw'
+
+const pathOf = (svg) => svg.match(/<path d="([^"]+)"/)?.[1] || ''
+const LOGO = {
+  instagram: pathOf(igSvg), tiktok: pathOf(ttSvg), facebook: pathOf(fbSvg), twitter: pathOf(xSvg),
+  whatsapp: pathOf(waSvg), 'whatsapp-business': pathOf(waSvg),
+  email: 'M2 5h20v14H2zM2 6l10 7.5L22 6', // sobre genérico (el correo no es una marca única)
+}
+// Fondo del logo por red
+const LOGO_BG = {
+  instagram: 'linear-gradient(45deg,#feda75,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5)',
+  tiktok: '#010101', facebook: '#1877f2', twitter: '#000000',
+  whatsapp: '#25d366', 'whatsapp-business': '#128c7e', email: '#ea4335',
+}
+
+export function PlatformLogo({ id, size = 22 }) {
+  const d = LOGO[id]
+  if (!d) return null
+  const stroke = id === 'email'
+  return (
+    <span className="plogo" style={{ width: size, height: size, background: LOGO_BG[id] }} role="img" aria-label={PLATFORMS[id]?.name}>
+      <svg viewBox="0 0 24 24" width={size * 0.62} height={size * 0.62} fill={stroke ? 'none' : '#fff'} stroke={stroke ? '#fff' : 'none'} strokeWidth="1.8" strokeLinejoin="round">
+        <path d={d} />
+      </svg>
+    </span>
+  )
+}
 
 export function Logo({ big }) {
   return (
@@ -46,6 +78,10 @@ const P = {
   x: 'M6 6l12 12M18 6L6 18',
   sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
   moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+  check: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12.5l3 3 5-6',
+  alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5v5M12 16v.5',
+  draft: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
+  all: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 }
 export function Icon({ name, size = 18 }) {
   return (
@@ -59,7 +95,7 @@ export function PlatformBadge({ id, small }) {
   const p = PLATFORMS[id]
   return (
     <span className={small ? 'pbadge small' : 'pbadge'} style={{ '--pc': p.color }}>
-      <i /> {p.name}
+      <PlatformLogo id={id} size={small ? 16 : 22} /> {p.name}
     </span>
   )
 }

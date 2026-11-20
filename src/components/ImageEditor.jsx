@@ -12,6 +12,10 @@ export default function ImageEditor({ design, setDesign }) {
   const [sel, setSel] = useState(design.layers[0]?.id)
   const [img, setImg] = useState(null)
   const [tick, setTick] = useState(0)
+  const [zoom, setZoom] = useState(1)
+  const [guides, setGuides] = useState(true)
+  const [full, setFull] = useState(false)
+  const [snap, setSnap] = useState({ x: false, y: false })
   const fmt = getFormat(design.format)
   const layer = design.layers.find((l) => l.id === sel)
 
@@ -33,7 +37,34 @@ export default function ImageEditor({ design, setDesign }) {
         ctx.restore()
       }
     }
-  }, [design, img, sel, tick, fmt.w, fmt.h]) // eslint-disable-line
+    if (guides) {
+      ctx.save()
+      ctx.lineWidth = 2; ctx.setLineDash([])
+      // zona segura (5%) y cuadrícula de tercios
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'
+      ctx.strokeRect(fmt.w * 0.05, fmt.h * 0.05, fmt.w * 0.9, fmt.h * 0.9)
+      ctx.strokeStyle = 'rgba(255,255,255,.18)'
+      for (let i = 1; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo((fmt.w * i) / 3, 0); ctx.lineTo((fmt.w * i) / 3, fmt.h); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(0, (fmt.h * i) / 3); ctx.lineTo(fmt.w, (fmt.h * i) / 3); ctx.stroke()
+      }
+      ctx.restore()
+    }
+    if (snap.x || snap.y) {
+      ctx.save()
+      ctx.lineWidth = 3; ctx.strokeStyle = '#ff3d8b'
+      if (snap.x) { ctx.beginPath(); ctx.moveTo(fmt.w / 2, 0); ctx.lineTo(fmt.w / 2, fmt.h); ctx.stroke() }
+      if (snap.y) { ctx.beginPath(); ctx.moveTo(0, fmt.h / 2); ctx.lineTo(fmt.w, fmt.h / 2); ctx.stroke() }
+      ctx.restore()
+    }
+  }, [design, img, sel, tick, fmt.w, fmt.h, guides, snap]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!full) return
+    const k = (e) => e.key === 'Escape' && setFull(false)
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [full])
 
   const patch = (p) => setDesign({ ...design, ...p })
   const patchBg = (p) => patch({ bg: { ...design.bg, ...p } })
@@ -56,11 +87,24 @@ export default function ImageEditor({ design, setDesign }) {
   const move = (e) => {
     if (!drag.current) return
     const p = pt(e), d = drag.current
-    const x = Math.min(1, Math.max(0, (p.x - d.dx) / fmt.w))
-    const y = Math.min(1, Math.max(0, (p.y - d.dy) / fmt.h))
+    let x = Math.min(1, Math.max(0, (p.x - d.dx) / fmt.w))
+    let y = Math.min(1, Math.max(0, (p.y - d.dy) / fmt.h))
+    const T = 0.012 // imán al centro
+    const sx = Math.abs(x - 0.5) < T, sy = Math.abs(y - 0.5) < T
+    if (sx) x = 0.5
+    if (sy) y = 0.5
+    if (sx !== snap.x || sy !== snap.y) setSnap({ x: sx, y: sy })
     setDesign({ ...design, layers: design.layers.map((l) => (l.id === d.id ? { ...l, x, y } : l)) })
   }
-  const up = () => { drag.current = null }
+  const up = () => { drag.current = null; if (snap.x || snap.y) setSnap({ x: false, y: false }) }
+  const key = (e) => {
+    if (!layer || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return
+    const st = (e.shiftKey ? 10 : 1) / 200
+    const m = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key]
+    if (!m) return
+    e.preventDefault()
+    patchLayer({ x: Math.min(1, Math.max(0, layer.x + m[0])), y: Math.min(1, Math.max(0, layer.y + m[1])) })
+  }
 
   const addLayer = () => {
     const l = newLayer({ text: t('Nuevo texto'), y: 0.6, size: 70 })
@@ -105,8 +149,17 @@ export default function ImageEditor({ design, setDesign }) {
   return (
     <div className="editor">
       <div className="stage">
-        <div className="canvas-wrap" style={{ aspectRatio: `${fmt.w}/${fmt.h}` }}>
-          <canvas ref={canvas} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+        <div className="stage-bar">
+          <button className="btn ghost sm" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title="Zoom -">−</button>
+          <button className="btn ghost sm zoom-val" onClick={() => setZoom(1)} title={t('Ajustar')}>{Math.round(zoom * 100)}%</button>
+          <button className="btn ghost sm" onClick={() => setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2)))} title="Zoom +">+</button>
+          <button className={'btn ghost sm' + (guides ? ' active' : '')} onClick={() => setGuides(!guides)} title={t('Guías')}>▦</button>
+          <button className="btn ghost sm" onClick={() => setFull(true)} title={t('Pantalla completa')}>⛶</button>
+        </div>
+        <div className="canvas-scroll">
+          <div className="canvas-wrap" tabIndex={0} onKeyDown={key} style={{ aspectRatio: `${fmt.w}/${fmt.h}`, width: `${zoom * 100}%`, maxHeight: zoom === 1 ? '74vh' : 'none' }}>
+            <canvas ref={canvas} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+          </div>
         </div>
         <p className="hint">{t('Arrastra los textos sobre la imagen para moverlos')} · {fmt.w}×{fmt.h}px</p>
         <button className="btn ghost sm" onClick={download}><Icon name="down" size={15} /> {t('Descargar PNG')}</button>
@@ -131,16 +184,16 @@ export default function ImageEditor({ design, setDesign }) {
 
         <section>
           <h4>{t('Fondo')}</h4>
-          <div className="seg">
+          <div className="seg full">
             {[['gradient', 'Degradado'], ['solid', 'Color'], ['image', 'Imagen']].map(([v, l]) => (
               <button key={v} className={design.bg.type === v ? 'on' : ''} onClick={() => patchBg({ type: v })}>{t(l)}</button>
             ))}
           </div>
           {design.bg.type !== 'image' && (
             <div className="row">
-              <label className="inl">{t('Color 1')}<input type="color" value={design.bg.c1} onChange={(e) => patchBg({ c1: e.target.value })} /></label>
+              <label className="inl sw">{t('Color 1')}<input type="color" value={design.bg.c1} onChange={(e) => patchBg({ c1: e.target.value })} /></label>
               {design.bg.type === 'gradient' && <>
-                <label className="inl">{t('Color 2')}<input type="color" value={design.bg.c2} onChange={(e) => patchBg({ c2: e.target.value })} /></label>
+                <label className="inl sw">{t('Color 2')}<input type="color" value={design.bg.c2} onChange={(e) => patchBg({ c2: e.target.value })} /></label>
                 <label className="inl grow">{t('Ángulo')}<input type="range" min="0" max="360" value={design.bg.angle} onChange={(e) => patchBg({ angle: +e.target.value })} /></label>
               </>}
             </div>
@@ -168,7 +221,7 @@ export default function ImageEditor({ design, setDesign }) {
           {layer && (
             <div className="layer-ed">
               <textarea rows={2} value={layer.text} onChange={(e) => patchLayer({ text: e.target.value })} />
-              <div className="row">
+              <div className="row fonts">
                 <select value={layer.font} onChange={(e) => patchLayer({ font: e.target.value })}>
                   {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
                 </select>
@@ -177,12 +230,12 @@ export default function ImageEditor({ design, setDesign }) {
                 </select>
                 <input type="color" value={layer.color} onChange={(e) => patchLayer({ color: e.target.value })} />
               </div>
-              <label className="inl">{t('Tamaño')} {layer.size}<input type="range" min="20" max="300" value={layer.size} onChange={(e) => patchLayer({ size: +e.target.value })} /></label>
+              <label className="inl"><span className="lbl">{t('Tamaño')} <b>{layer.size}</b></span><input type="range" min="20" max="300" value={layer.size} onChange={(e) => patchLayer({ size: +e.target.value })} /></label>
               <div className="row">
                 <label className="inl grow">X<input type="range" min="0" max="1" step="0.01" value={layer.x} onChange={(e) => patchLayer({ x: +e.target.value })} /></label>
                 <label className="inl grow">Y<input type="range" min="0" max="1" step="0.01" value={layer.y} onChange={(e) => patchLayer({ y: +e.target.value })} /></label>
               </div>
-              <div className="row">
+              <div className="row toolbar">
                 <div className="seg">
                   {['left', 'center', 'right'].map((a) => <button key={a} className={layer.align === a ? 'on' : ''} onClick={() => patchLayer({ align: a })}>{{ left: '⇤', center: '↔', right: '⇥' }[a]}</button>)}
                 </div>
@@ -194,6 +247,18 @@ export default function ImageEditor({ design, setDesign }) {
           )}
         </section>
       </div>
+      {full && <FullPreview design={design} onClose={() => setFull(false)} />}
+    </div>
+  )
+}
+
+function FullPreview({ design, onClose }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => { renderToDataURL(design, 'image/jpeg', 0.92, 1080).then(setUrl) }, []) // eslint-disable-line
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <button className="btn ghost sm lb-close" onClick={onClose}>✕</button>
+      {url ? <img src={url} alt="" onClick={(e) => e.stopPropagation()} /> : <span className="hint">…</span>}
     </div>
   )
 }
