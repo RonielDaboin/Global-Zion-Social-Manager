@@ -138,12 +138,7 @@ async function connectMeta(uid: string, platform: string, code: string, redirect
     }
   }
   if (!list.length) {
-    const me = await getJson(`${GRAPH}/me?` + qs({ fields: 'id,name', access_token: long.access_token })).catch(() => ({}))
-    const perms = await getJson(`${GRAPH}/me/permissions?` + qs({ access_token: long.access_token })).catch(() => ({ data: [] }))
-    const granted = (perms.data || []).filter((p: { status: string }) => p.status === 'granted').map((p: { permission: string }) => p.permission).join(',')
-    const dbg2 = await getJson(`${GRAPH}/debug_token?` + qs({ input_token: long.access_token, access_token: `${META.id}|${META.secret}` })).catch(() => ({ data: {} }))
-    const gran = JSON.stringify(dbg2.data?.granular_scopes || [])
-    throw new HttpError(400, `No se encontró ninguna página de Facebook administrada por esta cuenta (usuario: ${me.name || '?'} id ${me.id || '?'} · permisos: ${granted || 'ninguno'} · granular: ${gran} · tipo: ${dbg2.data?.type || '?'}).`)
+    throw new HttpError(400, 'No se encontró ninguna página de Facebook administrada por esta cuenta. Inicia sesión con la cuenta que administra la Página y, en el diálogo de Meta, concédele acceso a «Global Zion».')
   }
   if (platform === 'facebook') {
     const p = list[0]
