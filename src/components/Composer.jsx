@@ -142,7 +142,7 @@ export default function Composer({ onDone, onDiscard }) {
   const addTags = () => setCaption((c) => (c.trim() + '\n\n' + suggestHashtags(topic || c).join(' ')).trim())
 
   return (
-    <div className="page">
+    <div className="page cmp">
       <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige foto o video, escribe el texto y publica o programa.')}</p></div>
         <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button></header>
 

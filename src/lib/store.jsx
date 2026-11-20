@@ -3,7 +3,8 @@ import { publishPost, handleOAuthCallback, fetchSocial, socialCall } from './soc
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
-import { deleteVideo } from './mediaStore.js'
+import { deleteVideo, pushVideo } from './mediaStore.js'
+import { fetchPosts, upsertPosts, deletePosts } from './cloud.js'
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -27,12 +28,27 @@ export function AppProvider({ children }) {
   const [posts, setPosts] = useState([])
   const [draft, setDraft] = useState(null) // post en edición en el composer
   const loadedFor = useRef(null)
+  const cloudReady = useRef(false) // true cuando ya se cargaron las publicaciones desde Supabase
+  const syncedRef = useRef({}) // id -> JSON de la última versión guardada en Supabase
 
   useEffect(() => {
+    cloudReady.current = false
     if (!session) { loadedFor.current = null; return }
     setAccounts(read(`gz_accounts_${key}`, {}))
-    setPosts(read(`gz_posts_${key}`, []))
+    const local = read(`gz_posts_${key}`, [])
+    setPosts(local)
     loadedFor.current = key
+    // Publicaciones en Supabase. La primera vez en este navegador se fusionan con las locales (y se suben);
+    // después, Supabase es la fuente de verdad.
+    fetchPosts().then((remote) => {
+      if (loadedFor.current !== key) return
+      const ids = new Set(remote.map((p) => p.id))
+      const merged = read(`gz_cloud_${key}`, false) ? remote : [...remote, ...local.filter((p) => !ids.has(p.id))]
+      syncedRef.current = Object.fromEntries(remote.map((p) => [p.id, JSON.stringify(p)]))
+      cloudReady.current = true
+      write(`gz_cloud_${key}`, true)
+      setPosts(merged)
+    }).catch(() => notify(t('No se pudo conectar con la nube; se usan los datos locales'), 'err'))
     // Cuentas reales (tokens en el servidor) + qué redes están configuradas
     fetchSocial().then((r) => {
       if (!r || loadedFor.current !== key) return
@@ -50,6 +66,29 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (loadedFor.current === key) setStorageFull(!write(`gz_posts_${key}`, posts))
   }, [posts, key])
+
+  // Guarda en Supabase lo que cambió (con una pequeña espera para agrupar cambios)
+  useEffect(() => {
+    if (!cloudReady.current || !session) return
+    const h = setTimeout(async () => {
+      const synced = syncedRef.current
+      const stable = posts.filter((p) => p.status !== 'publishing')
+      const up = stable.filter((p) => JSON.stringify(p) !== synced[p.id])
+      const del = Object.keys(synced).filter((id) => !posts.some((p) => p.id === id))
+      if (!up.length && !del.length) return
+      try {
+        for (const p of up) if (p.mediaType === 'video') await pushVideo(p.id).catch(() => {})
+        await upsertPosts(session.id, up)
+        await deletePosts(session.id, del)
+        const next = { ...synced }
+        up.forEach((p) => { next[p.id] = JSON.stringify(p) })
+        del.forEach((id) => { delete next[id] })
+        syncedRef.current = next
+      } catch (e) { notify(t('No se pudo guardar en la nube:') + ' ' + e.message, 'err') }
+    }, 900)
+    return () => clearTimeout(h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts, session])
 
   const notify = useCallback((msg, type = 'ok') => {
     setToast({ msg, type, id: uid() })
@@ -90,7 +129,7 @@ export function AppProvider({ children }) {
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } } })
     if (error) throw authErr(error)
   }
-  const logout = async () => { await supabase.auth.signOut(); setAccounts({}); setPosts([]) }
+  const logout = async () => { cloudReady.current = false; await supabase.auth.signOut(); setAccounts({}); setPosts([]) }
 
   // ---- Cuentas sociales ----
   const connectAccount = (platform, data) => setAccounts((a) => ({ ...a, [platform]: { ...data, connectedAt: Date.now() } }))

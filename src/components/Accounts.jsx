@@ -49,7 +49,7 @@ export default function Accounts() {
   }
 
   return (
-    <div className="page">
+    <div className="page acct">
       <header className="ph"><h1>{t('Cuentas conectadas')}</h1><p>{t('Inicia sesión con tus redes para controlar las publicaciones.')}</p></header>
       <div className="cards2">
         {Object.values(PLATFORMS).map((p) => {

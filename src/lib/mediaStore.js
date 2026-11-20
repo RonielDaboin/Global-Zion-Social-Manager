@@ -1,4 +1,6 @@
-// Los videos pesan demasiado para localStorage: se guardan en IndexedDB, por id de publicación.
+// Los videos pesan demasiado para localStorage: se guardan en IndexedDB (caché local) y en Supabase Storage (bucket privado post-videos).
+import { supabase } from './supabase.js'
+
 const DB = 'gz-media'
 const STORE = 'videos'
 
@@ -19,6 +21,39 @@ const run = async (mode, fn) => {
   })
 }
 
-export const saveVideo = (id, blob) => run('readwrite', (s) => s.put(blob, id))
-export const loadVideo = (id) => run('readonly', (s) => s.get(id)).catch(() => null)
-export const deleteVideo = (id) => run('readwrite', (s) => s.delete(id)).catch(() => {})
+const idbGet = (id) => run('readonly', (s) => s.get(id)).catch(() => null)
+const idbPut = (id, blob) => run('readwrite', (s) => s.put(blob, id))
+const path = async (id) => {
+  const { data } = await supabase.auth.getSession()
+  return data.session ? `${data.session.user.id}/${id}` : null
+}
+
+export const saveVideo = (id, blob) => idbPut(id, blob)
+
+/** Local primero; si no está (otro navegador/dirección), lo baja de Supabase y lo cachea. */
+export const loadVideo = async (id) => {
+  const local = await idbGet(id)
+  if (local) return local
+  try {
+    const p = await path(id)
+    if (!p) return null
+    const { data, error } = await supabase.storage.from('post-videos').download(p)
+    if (error || !data) return null
+    await idbPut(id, data).catch(() => {})
+    return data
+  } catch { return null }
+}
+
+/** Sube a Supabase el video guardado localmente (si lo hay). */
+export const pushVideo = async (id) => {
+  const blob = await idbGet(id)
+  const p = await path(id)
+  if (!blob || !p) return false
+  const { error } = await supabase.storage.from('post-videos').upload(p, blob, { contentType: blob.type || 'video/mp4', upsert: true })
+  return !error
+}
+
+export const deleteVideo = async (id) => {
+  await run('readwrite', (s) => s.delete(id)).catch(() => {})
+  try { const p = await path(id); if (p) await supabase.storage.from('post-videos').remove([p]) } catch { /* ignore */ }
+}
