@@ -195,7 +195,9 @@ async function publishInstagram(a: Acc, j: Job) {
     await new Promise((r) => setTimeout(r, 3000))
   }
   const p = await getJson(`${GRAPH}/${ig}/media_publish`, { method: 'POST', headers: FORM, body: qs({ creation_id: c.id, access_token: tk }) })
-  return { id: p.id }
+  let permalink: string | undefined
+  try { permalink = (await getJson(`${GRAPH}/${p.id}?` + qs({ fields: 'permalink', access_token: tk }))).permalink } catch { /* opcional */ }
+  return { id: p.id, permalink }
 }
 
 async function publishFacebook(a: Acc, j: Job) {
@@ -273,6 +275,21 @@ Deno.serve(async (req) => {
     if (b.action === 'disconnect') {
       await admin.from('social_accounts').delete().eq('user_id', uid).eq('platform', platform)
       return json({ ok: true })
+    }
+    if (b.action === 'permalink') { // enlace directo a una publicación de Instagram (por id o, si no hay, buscándola)
+      const { data: a } = await admin.from('social_accounts').select('account_id,access_token').eq('user_id', uid).eq('platform', 'instagram').maybeSingle()
+      if (!a) throw new HttpError(400, 'Cuenta no conectada')
+      if (b.mediaId) {
+        const m = await getJson(`${GRAPH}/${b.mediaId}?` + qs({ fields: 'permalink', access_token: a.access_token }))
+        return json({ permalink: m.permalink || null })
+      }
+      const l = await getJson(`${GRAPH}/${a.account_id}/media?` + qs({ fields: 'permalink,caption,timestamp', limit: '50', access_token: a.access_token }))
+      const cap = String(b.caption || '').trim(), t0 = Number(b.publishedAt) || 0
+      const items = (l.data || []) as { permalink: string; caption?: string; timestamp: string }[]
+      const same = items.filter((m) => (m.caption || '').trim() === cap)
+      const pool = same.length ? same : items
+      pool.sort((x, y) => Math.abs(new Date(x.timestamp).getTime() - t0) - Math.abs(new Date(y.timestamp).getTime() - t0))
+      return json({ permalink: pool[0]?.permalink || null })
     }
     if (b.action === 'publish') {
       const { data: a } = await admin.from('social_accounts').select('*').eq('user_id', uid).eq('platform', platform).maybeSingle()

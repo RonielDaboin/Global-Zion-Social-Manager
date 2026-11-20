@@ -78,11 +78,11 @@ export async function publishPost(post, accounts) {
       const isVideo = post.mediaType === 'video'
       if (isVideo) media.videoUrl ||= await uploadMedia(post, 'video')
       else if (post.image) media.imageUrl ||= await uploadMedia(post, 'image')
-      await socialCall('publish', {
+      const r = await socialCall('publish', {
         platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
         mediaType: post.mediaType || 'photo', format: post.format, ...media,
       })
-      results[p] = { ok: true }
+      results[p] = { ok: true, permalink: r?.result?.permalink, mediaId: r?.result?.id }
     } catch (e) {
       results[p] = { ok: false, error: e.message }
     }
