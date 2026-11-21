@@ -17,6 +17,8 @@
 // Exige un usuario con sesión iniciada (verify_jwt = true). La generación de imágenes en la
 // API de Gemini normalmente requiere facturación activada en Google AI Studio.
 
+import { requirePlan } from '../_shared/plan.ts'
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -83,6 +85,8 @@ async function cloudflare(prompt: string): Promise<string> {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405)
+  const denied = requirePlan(req, 2)
+  if (denied) return json({ error: denied }, 403)
   const key = Deno.env.get('GEMINI_API_KEY')
 
   let b: Record<string, unknown>

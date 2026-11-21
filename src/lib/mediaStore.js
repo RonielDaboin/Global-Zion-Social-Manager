@@ -53,6 +53,11 @@ export const pushVideo = async (id) => {
   return !error
 }
 
+/** Borra solo la copia de la nube (la local del navegador se conserva para la vista previa). */
+export const removeCloudVideo = async (id) => {
+  try { const p = await path(id); if (p) await supabase.storage.from('post-videos').remove([p]) } catch { /* ignore */ }
+}
+
 export const deleteVideo = async (id) => {
   await run('readwrite', (s) => s.delete(id)).catch(() => {})
   try { const p = await path(id); if (p) await supabase.storage.from('post-videos').remove([p]) } catch { /* ignore */ }

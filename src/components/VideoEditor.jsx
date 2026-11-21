@@ -98,7 +98,7 @@ function TextTimeline({ texts, selT, onSelect, dur, cur, onSeek, onPatch }) {
   )
 }
 
-export default function VideoEditor({ file, video, setVideo, setFile, platforms, notify }) {
+export default function VideoEditor({ file, video, setVideo, setFile, platforms, notify, maxMB = MAX_VIDEO_MB }) {
   useLang()
   const ref = useRef(null)
   const origRef = useRef(null) // archivo original, para poder deshacer lo aplicado
@@ -207,7 +207,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     e.target.value = ''
     if (!f) return
     if (!f.type.startsWith('video/')) return notify(t('Selecciona un archivo de video (MP4, MOV, WebM).'), 'err')
-    if (f.size > MAX_VIDEO_MB * 1048576) return notify(t('El video supera {n} MB.', { n: MAX_VIDEO_MB }), 'err')
+    if (f.size > maxMB * 1048576) return notify(t('El video supera {n} MB (límite de tu plan).', { n: maxMB }), 'err')
     origRef.current = null
     wantCover.current = true
     setFx(FX0); setMute(false); setTexts([]); setSelT(null); setFrame(FRAME0)
@@ -524,7 +524,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
             <label className="btn ghost sm file"><Icon name="up" size={15} /> {file ? t('Cambiar video') : t('Subir video')}<input type="file" accept="video/*" hidden onChange={onPick} disabled={busy} /></label>
             {file && <button className="btn danger sm" onClick={remove} disabled={busy}><Icon name="trash" size={14} /> {t('Quitar video')}</button>}
           </div>
-          <p className="muted small">{t('Formatos: MP4, MOV o WebM. Máximo {n} MB. Recomendado: vertical 9:16 para Reels, TikTok e Historias.', { n: MAX_VIDEO_MB })}</p>
+          <p className="muted small">{t('Formatos: MP4, MOV o WebM. Máximo {n} MB. Recomendado: vertical 9:16 para Reels, TikTok e Historias.', { n: maxMB })}</p>
           {video && <p className="muted small">📎 {video.name}</p>}
         </section>
 

@@ -111,6 +111,7 @@ const P = {
   alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5v5M12 16v.5',
   draft: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
   crown: 'M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z',
+  lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
   star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
   all: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 }

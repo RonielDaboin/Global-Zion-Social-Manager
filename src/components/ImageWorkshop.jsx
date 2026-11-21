@@ -269,7 +269,7 @@ function inpaintCanvas(cv, mask, r) {
   return true
 }
 
-export default function ImageWorkshop({ image, ratioHint, onApply, onClose }) {
+export default function ImageWorkshop({ image, ratioHint, onApply, onClose, canRemoveBg = true, canUpscale = true, onLocked = () => {} }) {
   useLang()
   const [src, setSrc] = useState(image)
   const [origin, setOrigin] = useState(image) // píxeles originales (con el fondo): de aquí restaura el pincel
@@ -393,6 +393,7 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose }) {
   }
 
   const removeBg = async () => {
+    if (!canRemoveBg) return onLocked(t('Quitar el fondo está disponible en el plan PRO PLUS.'))
     setErr(''); setPct(0); setBusy('bg')
     try {
       const { removeBackground } = await import('@imgly/background-removal')
@@ -406,6 +407,7 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose }) {
   }
 
   const upscale = async (factor) => {
+    if (!canUpscale) return onLocked(t('Ampliar imágenes está disponible en el plan PRO PLUS.'))
     setErr(''); setBusy('up')
     await new Promise((r) => setTimeout(r, 30)) // deja pintar el aviso antes del cálculo pesado
     try {
@@ -679,7 +681,7 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose }) {
           <div className="ws-card">
             <div className="ws-label">{t('Fondo')}</div>
             <div className="ws-actions">
-              <button className="btn ghost sm" disabled={!!busy} onClick={removeBg}><WsIcon d={IC.wand} /> {t('Quitar fondo')}</button>
+              <button className="btn ghost sm" disabled={!!busy} onClick={removeBg}><WsIcon d={IC.wand} /> {t('Quitar fondo')}{!canRemoveBg && ' 🔒'}</button>
               <button className="btn ghost sm" disabled={!!busy || !hist.length} onClick={undo}><WsIcon d={IC.undo} /> {t('Deshacer')}</button>
             </div>
           </div>
@@ -687,8 +689,8 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose }) {
           <div className="ws-card">
             <div className="ws-label">{t('Mejorar calidad')}<em>{nat.w}×{nat.h}px</em></div>
             <div className="ws-pills ws-scale">
-              <button disabled={!!busy} onClick={() => upscale(2)}>×2</button>
-              <button disabled={!!busy} onClick={() => upscale(4)}>×4</button>
+              <button disabled={!!busy} onClick={() => upscale(2)}>×2{!canUpscale && ' 🔒'}</button>
+              <button disabled={!!busy} onClick={() => upscale(4)}>×4{!canUpscale && ' 🔒'}</button>
             </div>
           </div>
 

@@ -7,9 +7,9 @@ import AICredits from './components/AICredits.jsx'
 import Composer from './components/Composer.jsx'
 import Posts from './components/Posts.jsx'
 import Calendar from './components/Calendar.jsx'
-import { accessOf } from './lib/plans.js'
 import { useUsageTime } from './lib/useTime.js'
 import Profile from './components/Profile.jsx'
+import PlansModal from './components/Plans.jsx'
 import Legal, { Footer } from './components/Legal.jsx'
 import { useLang, t } from './lib/i18n.jsx'
 import { Logo, Icon, ThemeToggle, LangToggle, Avatar } from './components/ui.jsx'
@@ -31,13 +31,22 @@ const LEGAL = { privacy: 'privacy', terms: 'terms' }
 const legalFromHash = () => LEGAL[window.location.hash.replace(/^#\/?/, '').split('/')[0]] || null
 
 function PlanBadge({ access, onClick, className = '' }) {
-  if (access.plan.id === 'free') return null
+  if (access.plan.id === 'basic') return null
   return (
     <button className={`plan-badge ${access.plan.tone} ${className}`} onClick={onClick} title={`${t('Tu plan')}: ${access.plan.name}`}>
       <Icon name={access.role.id === 'owner' ? 'crown' : 'star'} size={13} />
       <b>{access.plan.name.toUpperCase()}</b>
       {access.role.id === 'owner' && <small>{t('Dueño')}</small>}
     </button>
+  )
+}
+
+function Locked({ onPlans }) {
+  return (
+    <div className="page"><div className="card" style={{ textAlign: 'center', display: 'grid', gap: 12, justifyItems: 'center' }}>
+      <Icon name="lock" size={28} /><h3>{t('Función no incluida en tu plan')}</h3>
+      <button className="btn primary" onClick={onPlans}>{t('Ver planes')}</button>
+    </div></div>
   )
 }
 
@@ -48,7 +57,7 @@ export default function App() {
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  const { session, authReady, logout, toast, storageFull, setDraft, draft } = useApp()
+  const { session, authReady, logout, toast, storageFull, setDraft, draft, access: acc0, openPlans } = useApp()
   // La sección actual se refleja en la URL (#/create-post) y se puede abrir/compartir directamente
   const [page, setPageRaw] = useState(() => {
     const fromHash = PAGE_BY_SLUG[window.location.hash.replace(/^#\/?/, '').split('/')[0]]
@@ -75,9 +84,9 @@ export default function App() {
 
   if (legal) return <Legal doc={legal} />
   if (!authReady) return null
-  if (!session) return <><Login />{toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}</>
+  if (!session) return <><Login /><PlansModal />{toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}</>
 
-  const access = accessOf(session)
+  const access = acc0
   const go = (p) => {
     // 'composer-new' empieza una publicación nueva; 'composer' (menú lateral) retoma el trabajo en curso
     if (p === 'composer-new') { try { sessionStorage.removeItem('gz_edit') } catch { /* ignore */ } setDraft(null); setPage('composer') } else setPage(p)
@@ -90,7 +99,7 @@ export default function App() {
         <Logo />
         <PlanBadge access={access} onClick={() => go('profile')} className="side-plan" />
         <nav>
-          {NAV.map((n) => (
+          {NAV.filter((n) => n.id !== 'credits' || access.limits.credits).map((n) => (
             <button key={n.id} className={page === n.id ? 'nav on' : 'nav'} onClick={() => go(n.id)}>
               <Icon name={n.icon} /> <span>{t(n.label)}</span>
             </button>
@@ -102,7 +111,7 @@ export default function App() {
           <button className={'user-link' + (page === 'profile' ? ' on' : '')} title={t('Mi perfil')} onClick={() => go('profile')}>
           <span className="u-av"><Avatar session={session} /><i className="u-dot" /></span>
           <div className="uinfo">
-            <b>{session.name}{access.plan.id !== 'free' && <em className={'u-plan ' + access.plan.tone}>{access.plan.id === 'pro_plus' ? 'PRO+' : access.plan.name.toUpperCase()}</em>}</b>
+            <b>{session.name}{access.plan.id !== 'basic' && <em className={'u-plan ' + access.plan.tone}>{access.plan.id === 'pro_plus' ? 'PRO+' : access.plan.name.toUpperCase()}</em>}</b>
             <small>{access.role.id !== 'user' ? t(access.role.name) : session.email}</small>
           </div>
           <span className="u-chev" aria-hidden="true">›</span>
@@ -128,10 +137,11 @@ export default function App() {
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}
         {page === 'accounts' && <Accounts />}
-        {page === 'credits' && <AICredits />}
+        {page === 'credits' && (access.limits.credits ? <AICredits /> : <Locked onPlans={() => openPlans(t('Los Créditos IA están disponibles desde el plan PRO.'))} />)}
         {page === 'profile' && <Profile onLogout={() => setAskOut(true)} />}
         <Footer />
       </main>
+      <PlansModal />
       {askOut && (
         <div className="modal-bg" onClick={() => setAskOut(false)}>
           <div className="modal" role="alertdialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>

@@ -5,11 +5,12 @@ import { useApp } from '../lib/store.jsx'
 import { t, useLang, locale } from '../lib/i18n.jsx'
 import { PLATFORMS, accountLabel, EMAIL_PROVIDERS } from '../lib/formats.js'
 import { Icon, PlatformLogo, StatusTag, fmtDate } from './ui.jsx'
+import { LockTag } from './Plans.jsx'
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export default function Dashboard({ go, edit }) {
-  const { session, posts, accounts } = useApp()
+  const { session, posts, accounts, access, openPlans } = useApp()
   useLang()
   const [auto, setAuto] = useState(false)
   const count = (s) => posts.filter((p) => p.status === s).length
@@ -47,7 +48,7 @@ export default function Dashboard({ go, edit }) {
           <h1>{t('Hola, {name}', { name: session.name.split(' ')[0] })} 👋</h1>
           <p>{summary}</p>
           <div className="hero-act">
-            <button className="btn primary auto-btn" onClick={() => setAuto(true)}>✨ {t('Crear con IA')}</button>
+            <button className="btn primary auto-btn" onClick={() => (access.limits.autoPost ? setAuto(true) : openPlans(t('La publicación automática con IA está disponible en el plan PRO PLUS.')))}>✨ {t('Crear con IA')}{!access.limits.autoPost && <LockTag plan="PLUS" />}</button>
             <button className="btn primary" onClick={() => go('composer-new')}><Icon name="plus" size={16} /> {t('Crear publicación')}</button>
             <button className="btn ghost cal-btn" onClick={() => go('calendar')}><Icon name="cal" size={16} /> {t('Calendario')}</button>
           </div>

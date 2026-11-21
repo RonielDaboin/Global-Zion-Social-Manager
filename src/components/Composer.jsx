@@ -11,6 +11,8 @@ import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
 import { Icon, PlatformBadge } from './ui.jsx'
+import { planFor, aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
+import { LockTag } from './Plans.jsx'
 
 const toLocalInput = (ts) => {
   const d = new Date(ts - new Date().getTimezoneOffset() * 60000)
@@ -22,7 +24,8 @@ const wipRead = (k) => { try { const v = localStorage.getItem(k); return v ? JSO
 const wipWrite = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* almacenamiento lleno: se ignora */ } }
 
 export default function Composer({ onDone, onDiscard }) {
-  const { draft, setDraft, savePost, publishNow, accounts, notify, session } = useApp()
+  const { draft, setDraft, savePost, publishNow, accounts, notify, session, posts, access, openPlans } = useApp()
+  const lim = access.limits
   useLang()
   // Cada destino (publicación nueva o cada publicación que se edita) guarda su propio trabajo en curso.
   const base = `gz_wip_${session?.id || 'anon'}`
@@ -53,7 +56,8 @@ export default function Composer({ onDone, onDiscard }) {
   const capRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const hashMedia = () => { const m = window.location.hash.match(/^#\/create-post\/(image|video)/); return m ? (m[1] === 'video' ? 'video' : 'photo') : null }
-  const [mediaType, setMediaType] = useState(src.mediaType || hashMedia() || 'photo')
+  const [mediaType, setMediaType] = useState(() => { const m = src.mediaType || hashMedia() || 'photo'; return m === 'video' && !lim.video ? 'photo' : m })
+  const pickMedia = (m) => { if (m === 'video' && !lim.video) return openPlans(t('El editor de video está disponible desde el plan PRO.')); setMediaType(m) }
   // La URL refleja el tipo: #/create-post/image · #/create-post/video
   useEffect(() => {
     const h = '#/create-post/' + (mediaType === 'video' ? 'video' : 'image')
@@ -66,6 +70,7 @@ export default function Composer({ onDone, onDiscard }) {
   }, []) // eslint-disable-line
   const [video, setVideo] = useState(src.video || null)
   const [videoFile, setVideoFile] = useState(null)
+  const [saveCopy, setSaveCopy] = useState(true) // descargar el video al ordenador al publicar/programar
   useEffect(() => { if (src.mediaType === 'video') loadVideo(src.id).then((b) => b && setVideoFile(b)) }, []) // eslint-disable-line
   // El archivo de video va a IndexedDB en cuanto se sube, para que también sobreviva a F5
   useEffect(() => { if (videoFile) saveVideo(id, videoFile).catch(() => {}) }, [videoFile, id])
@@ -92,7 +97,10 @@ export default function Composer({ onDone, onDiscard }) {
   }
 
   const fmt = getFormat(design.format)
-  const togglePlat = (p) => setPlatforms((l) => (l.includes(p) ? l.filter((x) => x !== p) : [...l, p]))
+  const togglePlat = (p) => {
+    if (!lim.platforms.includes(p)) return openPlans(t('{p} está disponible desde el plan {n}.', { p: PLATFORMS[p].name, n: planFor((l) => l.platforms.includes(p)).name }))
+    setPlatforms((l) => (l.includes(p) ? l.filter((x) => x !== p) : [...l, p]))
+  }
   const maxLen = Math.min(...(platforms.length ? platforms : ['instagram']).map((p) => PLATFORMS[p].limit))
   const tags = (caption.match(/#[\p{L}\p{N}_]+/gu) || []).length
   const tagLimit = Math.min(...(platforms.length ? platforms : ['instagram']).map((p) => PLATFORMS[p].maxTags))
@@ -117,18 +125,32 @@ export default function Composer({ onDone, onDiscard }) {
     if (caption.length > maxLen) { notify(t('El texto supera el límite de {n} caracteres', { n: maxLen }), 'err'); return false }
     if (needPlatforms && hasEmail && !subject.trim()) { notify(t('El correo necesita un asunto'), 'err'); return false }
     if (needPlatforms && needsTo && !recipients.trim()) { notify(t('Indica los destinatarios'), 'err'); return false }
+    if (needPlatforms && platforms.some((p) => !lim.platforms.includes(p))) { const b = platforms.find((p) => !lim.platforms.includes(p)); openPlans(t('{p} está disponible desde el plan {n}.', { p: PLATFORMS[b].name, n: planFor((l) => l.platforms.includes(b)).name })); return false }
     if (needPlatforms && !platforms.length) { notify(t('Selecciona al menos una red social'), 'err'); return false }
     if (needPlatforms && !isVideo && platforms.includes('youtube')) { notify(t('YouTube solo admite videos: cambia a Video o quita YouTube.'), 'err'); return false }
     return true
   }
 
+  const downloadVideo = () => {
+    const ext = ((videoFile.type || 'video/mp4').split('/')[1] || 'mp4').replace('quicktime', 'mov')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(videoFile)
+    a.download = `${(videoFile.name || 'video').replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '_') || 'video'}.${ext}`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+  }
+
   const run = async (status) => {
     if (!validate(status !== 'draft')) return
     if (status === 'scheduled' && new Date(when).getTime() <= Date.now()) return notify(t('Elige una fecha futura'), 'err')
+    if (status === 'scheduled' && scheduledInMonth(posts, new Date(when).getTime(), id) >= lim.scheduledPerMonth) {
+      return openPlans(lim.scheduledPerMonth ? t('Tu plan {a} permite programar hasta {n} publicaciones al mes.', { a: access.plan.name, n: lim.scheduledPerMonth }) : t('Programar publicaciones está disponible desde el plan PRO.'))
+    }
     if (status !== 'draft') {
       const missing = platforms.filter((p) => !accounts[p])
       if (missing.length) return notify(t('Conecta primero: {p}', { p: missing.map((m) => PLATFORMS[m].name).join(', ') }), 'err')
     }
+    if (isVideo && saveCopy && status !== 'draft') downloadVideo()
     setBusy(true)
     const post = await build(status === 'now' ? 'draft' : status)
     savePost(post)
@@ -150,6 +172,8 @@ export default function Composer({ onDone, onDiscard }) {
   }
   const gen = async () => {
     if (genBusy) return
+    if (!lim.aiText) { setCaption(generateCaption(topic, tone)); return notify(t('Texto creado con una plantilla. La IA de textos está disponible desde el plan PRO.')) }
+    if (aiTextUsed(session?.id) >= lim.aiTextPerDay) { setCaption(generateCaption(topic, tone)); openPlans(t('Llegaste al límite de {n} textos con IA de hoy. Se usó una plantilla.', { n: lim.aiTextPerDay })); return }
     setGenBusy(true)
     try {
       let image = null, frames = null
@@ -164,6 +188,7 @@ export default function Composer({ onDone, onDiscard }) {
       }
       const networks = platforms.map((p) => PLATFORMS[p].name)
       setCaption(await generateCaptionAI({ topic, tone, networks, maxLen, maxTags: tagLimit, mediaType, image, frames }))
+      aiTextBump(session?.id)
     } catch (e) {
       setCaption(generateCaption(topic, tone))
       notify(t('No se pudo usar la IA ({e}). Se usó una plantilla.', { e: e.message }), 'err')
@@ -176,7 +201,7 @@ export default function Composer({ onDone, onDiscard }) {
     <div className="page cmp">
       <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige imagen o video, escribe el texto y publica o programa.')}</p></div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn primary auto-btn" onClick={() => setAutoOpen(true)}>✨ {t('Crear con IA')}</button>
+          <button className="btn primary auto-btn" onClick={() => (lim.autoPost ? setAutoOpen(true) : openPlans(t('La publicación automática con IA está disponible en el plan PRO PLUS.')))}>✨ {t('Crear con IA')}{!lim.autoPost && <LockTag plan="PLUS" />}</button>
           <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button>
         </div></header>
       {autoOpen && <AutoPost onClose={() => setAutoOpen(false)} onGenerated={applyAuto} />}
@@ -184,16 +209,16 @@ export default function Composer({ onDone, onDiscard }) {
       <div className="card">
         <h3>1 · {t('Tipo de contenido')}</h3>
         <div className="media-type">
-          <button className={'mt' + (!isVideo ? ' on' : '')} onClick={() => setMediaType('photo')}>
+          <button className={'mt' + (!isVideo ? ' on' : '')} onClick={() => pickMedia('photo')}>
             <span className="mt-ico">🖼️</span><b>{t('Imagen')}</b><small>{t('Diseña una imagen con plantillas, textos y fondos')}</small>
           </button>
-          <button className={'mt' + (isVideo ? ' on' : '')} onClick={() => setMediaType('video')}>
-            <span className="mt-ico">🎬</span><b>{t('Video')}</b><small>{t('Sube un video, elige la portada y revisa los límites')}</small>
+          <button className={'mt' + (isVideo ? ' on' : '')} onClick={() => pickMedia('video')}>
+            <span className="mt-ico">🎬</span><b>{t('Video')}{!lim.video && <LockTag plan="PRO" />}</b><small>{t('Sube un video, elige la portada y revisa los límites')}</small>
           </button>
         </div>
         <h3 className="sub">{isVideo ? t('Herramientas de video') : t('Herramientas de imagen')}</h3>
         {isVideo
-          ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} />
+          ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} maxMB={lim.videoMB} />
           : <ImageEditor design={design} setDesign={setDesign} />}
       </div>
 
@@ -222,7 +247,7 @@ export default function Composer({ onDone, onDiscard }) {
           {Object.values(PLATFORMS).map((p) => (
             <button key={p.id} className={'plat' + (platforms.includes(p.id) ? ' on' : '')} style={{ '--pc': p.color }} onClick={() => togglePlat(p.id)}>
               <PlatformBadge id={p.id} />
-              <small>{accounts[p.id] ? accountLabel(p, accounts[p.id]) : t('No conectada')}</small>
+              <small>{!lim.platforms.includes(p.id) ? <LockTag plan={planFor((l) => l.platforms.includes(p.id)).name} /> : accounts[p.id] ? accountLabel(p, accounts[p.id]) : t('No conectada')}</small>
             </button>
           ))}
         </div>
@@ -232,6 +257,15 @@ export default function Composer({ onDone, onDiscard }) {
             <label className="inl">{t('Destinatarios (correos o números, separados por coma)')}<input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="cliente@correo.com, +56 9 1234 5678" /></label>
           </div>
         )}
+        {isVideo && (
+          <label className="save-copy">
+            <input type="checkbox" checked={saveCopy} onChange={(e) => setSaveCopy(e.target.checked)} />
+            <span>
+              <b>💾 {t('Descargar una copia del video en mi computadora')}</b>
+              <small>{t('Recomendado: para ahorrar espacio, el video se elimina de la nube cuando se publica. Si lo programas, se descarga ahora y se borra al publicarse.')}</small>
+            </span>
+          </label>
+        )}
         {!isVideo && platforms.includes('youtube') && <p className="warn">⚠️ {t('YouTube solo admite videos: cambia a Video o quita YouTube.')}</p>}
         {isVideo && videoWarnings(video, platforms).map((w, i) => <p key={i} className="warn">⚠️ {w}</p>)}
         {!isVideo && formatMismatch.length > 0 && <p className="warn">⚠️ {t('El formato “{f}” no está pensado para {p}. Considera cambiar el formato.', { f: t(fmt.label), p: formatMismatch.map((m) => PLATFORMS[m].name).join(', ') })}</p>}
@@ -240,7 +274,7 @@ export default function Composer({ onDone, onDiscard }) {
         <div className="actions">
           <label className="inl">{t('Programar para')}<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
           <button className="btn ghost" disabled={busy} onClick={() => run('draft')}>{t('Guardar borrador')}</button>
-          <button className="btn blue" disabled={busy} onClick={() => run('scheduled')}><Icon name="clock" size={16} /> {t('Programar')}</button>
+          <button className="btn blue" disabled={busy} onClick={() => run('scheduled')}><Icon name="clock" size={16} /> {t('Programar')}{!lim.scheduledPerMonth && <LockTag plan="PRO" />}</button>
           <button className="btn primary" disabled={busy} onClick={() => run('now')}><Icon name="send" size={16} /> {t('Publicar ahora')}</button>
         </div>
       </div>

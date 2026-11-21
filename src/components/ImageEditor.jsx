@@ -10,6 +10,9 @@ import { BG_PRESETS } from '../lib/brand.js'
 import { vetImage } from '../lib/imageQuality.js'
 import ImageWorkshop from './ImageWorkshop.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
+import { useApp } from '../lib/store.jsx'
+import { aiTextUsed, aiTextBump } from '../lib/plans.js'
+import { LockTag } from './Plans.jsx'
 import { generateImageAI, generateLayerTextsAI, shrinkImage } from '../lib/social.js'
 
 // Relación de aspecto más cercana entre las que admite Gemini
@@ -50,6 +53,8 @@ let layerClip = null // portapapeles interno de elementos (Ctrl+C / Ctrl+X / Ctr
 
 export default function ImageEditor({ design, setDesign }) {
   useLang()
+  const { access, openPlans, session } = useApp()
+  const lim = access.limits
   const canvas = useRef(null)
   const layerTxt = useRef(null)
   const wrapRef = useRef(null)
@@ -188,6 +193,9 @@ export default function ImageEditor({ design, setDesign }) {
       if (fmts.length === 1) return
       const next = fmts.filter((x) => x !== id)
       patch({ formats: next, format: design.format === id ? next[0] : design.format })
+    } else if (!lim.multiFormat) {
+      if (fmts.length) openPlans(t('Publicar en varios formatos a la vez está disponible desde el plan PRO. En Básico se usa un formato.'))
+      patch({ formats: [id], format: id })
     } else patch({ formats: [...fmts, id], format: id })
   }
   const goFormat = (dir) => patch({ format: fmts[(fmts.indexOf(design.format) + dir + fmts.length) % fmts.length] })
@@ -342,6 +350,7 @@ export default function ImageEditor({ design, setDesign }) {
   }
   const aiGenerate = async () => {
     if (!aiPrompt.trim() || aiBusy) return
+    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan PRO PLUS.'))
     setAiBusy(true); setAiErr('')
     try {
       const url = await generateImageAI({ prompt: aiPrompt.trim(), aspectRatio: nearestRatio(fmt.w / fmt.h) })
@@ -356,6 +365,7 @@ export default function ImageEditor({ design, setDesign }) {
   // aplica las indicaciones de mejora y repite hasta 3 veces si la calidad no es buena.
   const aiRegen = async () => {
     if (aiBusy) return
+    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan PRO PLUS.'))
     setAiBusy(true); setAiErr('')
     try {
       const titles = design.layers.filter((l) => !l.bg && l.text.trim()).slice(0, 2).map((l) => l.text.replace(/\n/g, ' ')).join(' - ')
@@ -392,10 +402,13 @@ export default function ImageEditor({ design, setDesign }) {
   // Escribe todos los textos activos (los que existen ahora mismo, sean 3 o más) con IA
   const aiTexts = async () => {
     if (txtBusy || !design.layers.length) return
+    if (!lim.aiText) return openPlans(t('Los textos con IA están disponibles desde el plan PRO.'))
+    if (aiTextUsed(session?.id) >= lim.aiTextPerDay) return openPlans(t('Llegaste al límite de {n} textos con IA de hoy.', { n: lim.aiTextPerDay }))
     setTxtBusy(true); setTxtErr('')
     try {
       const layers = design.layers
       const texts = await generateLayerTextsAI({ layers, topic: txtTopic.trim() })
+      aiTextBump(session?.id)
       setDesign({ ...design, layers: layers.map((l, i) => (texts[i] ? { ...l, text: texts[i] } : l)) })
     } catch (e) { setTxtErr(e.message || String(e)) }
     setTxtBusy(false)
@@ -453,7 +466,7 @@ export default function ImageEditor({ design, setDesign }) {
 
         <section>
           <h4>🧩 {t('Plantillas')}</h4>
-          <TemplateChips onPick={applyTemplate} />
+          <TemplateChips onPick={applyTemplate} limit={lim.templates} onLocked={() => openPlans(t('Tu plan {a} incluye {n} plantillas. Todas las plantillas están en el plan PRO PLUS.', { a: access.plan.name, n: lim.templates }))} />
         </section>
 
         <section>
@@ -520,7 +533,7 @@ export default function ImageEditor({ design, setDesign }) {
             ]
             return (
               <div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in"><div className="fx">
-                <button className="btn primary ws-open ws-open-full" onClick={() => setShop(true)}>✂️ {t('Recortar / editar / quitar fondo')}</button>
+                <button className="btn primary ws-open ws-open-full" onClick={() => (lim.workshop ? setShop(true) : openPlans(t('El taller de imagen (recortar y borrar) está disponible desde el plan PRO.')))}>✂️ {t('Recortar / editar / quitar fondo')}{!lim.workshop && <LockTag plan="PRO" />}</button>
                 <div className="bg-adv">
                   <div className="bg-adv-colors">
                     <label className="bg-sw">{t('Color de fondo')}<input type="color" value={design.bg.c1} onChange={(e) => patchBg({ c1: e.target.value })} /></label>
@@ -560,7 +573,7 @@ export default function ImageEditor({ design, setDesign }) {
             placeholder={t('Describe la imagen que quieres generar…')} />
           <div className="row">
             <button className="btn sm" disabled={aiBusy || !aiPrompt.trim()} onClick={aiGenerate}>
-              {aiBusy ? t('Generando…') : t('Generar')}
+              {aiBusy ? t('Generando…') : t('Generar')}{!lim.aiImage && <LockTag plan="PLUS" />}
             </button>
           </div>
           {aiErr && <p className="hint" style={{ color: 'var(--danger, #ff5d73)' }}>{aiErr}</p>}
@@ -568,8 +581,8 @@ export default function ImageEditor({ design, setDesign }) {
 
         <div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
           <section>
-            <h4>😀 {t('Stickers')}</h4>
-            <Stickers onAdd={addSticker} />
+            <h4>😀 {t('Stickers')}{!lim.stickers && <LockTag plan="PRO" />}</h4>
+            {lim.stickers ? <Stickers onAdd={addSticker} /> : <button className="btn ghost sm" onClick={() => openPlans(t('Los stickers están disponibles desde el plan PRO.'))}>🔒 {t('Desbloquear stickers')}</button>}
           </section>
         </div></div>
 
@@ -579,7 +592,7 @@ export default function ImageEditor({ design, setDesign }) {
             <input type="text" value={txtTopic} maxLength={300} onChange={(e) => setTxtTopic(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && aiTexts()} placeholder={t('Tema o idea (opcional)')} />
             <button className="btn sm" disabled={txtBusy || !design.layers.length} onClick={aiTexts}>
-              <Icon name="magic" size={14} /> {txtBusy ? t('Generando…') : t('Escribir textos con IA')}
+              <Icon name="magic" size={14} /> {txtBusy ? t('Generando…') : t('Escribir textos con IA')}{!lim.aiText && <LockTag plan="PRO" />}
             </button>
           </div>
           {txtErr && <p className="hint" style={{ color: 'var(--danger, #ff5d73)' }}>{txtErr}</p>}
@@ -643,7 +656,7 @@ export default function ImageEditor({ design, setDesign }) {
           )}
         </section>
       </div>
-      {shop && design.bg.image && <ImageWorkshop image={design.bg.image} ratioHint={fmt.w / fmt.h} onApply={applyWorkshop} onClose={() => setShop(false)} />}
+      {shop && design.bg.image && <ImageWorkshop canRemoveBg={lim.removeBg} canUpscale={lim.upscale} onLocked={(m) => openPlans(m)} image={design.bg.image} ratioHint={fmt.w / fmt.h} onApply={applyWorkshop} onClose={() => setShop(false)} />}
       {full && <FullPreview design={design} onClose={() => setFull(false)} />}
     </div>
   )
@@ -662,7 +675,7 @@ function FullPreview({ design, onClose }) {
 }
 
 // Plantillas: muestra 2 filas y, si hay más, el botón «Ver más / Ver menos»
-function TemplateChips({ onPick }) {
+function TemplateChips({ onPick, limit = Infinity, onLocked }) {
   useLang()
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
@@ -687,7 +700,9 @@ function TemplateChips({ onPick }) {
   return (
     <>
       <div className="chips tpl-chips" ref={ref} style={!open && more ? { maxHeight: h2 + 4, overflow: 'hidden' } : undefined}>
-        {TEMPLATES.map((tpl) => <button key={tpl.id} className="chip" onClick={() => onPick(tpl)}>{t(tpl.name)}</button>)}
+        {TEMPLATES.map((tpl, i) => i < limit
+          ? <button key={tpl.id} className="chip" onClick={() => onPick(tpl)}>{t(tpl.name)}</button>
+          : <button key={tpl.id} className="chip locked" onClick={onLocked}>🔒 {t(tpl.name)}</button>)}
       </div>
       {more && <button className="btn ghost sm tpl-more" onClick={() => setOpen((o) => !o)}>{open ? t('Ver menos') : t('Ver más')} ({TEMPLATES.length})</button>}
     </>

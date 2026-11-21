@@ -3,7 +3,8 @@ import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { PLATFORMS, EMAIL_PROVIDERS, accountLabel } from '../lib/formats.js'
 import { startRealOAuth } from '../lib/social.js'
-import { fmtDate, PlatformLogo } from './ui.jsx'
+import { fmtDate, PlatformLogo, Icon } from './ui.jsx'
+import { planFor } from '../lib/plans.js'
 
 const BLURB = {
   instagram: 'Publica posts, stories y reels en tu cuenta profesional de Instagram.',
@@ -24,7 +25,9 @@ const valid = (p, v, prov) => {
 }
 
 export default function Accounts() {
-  const { accounts, connectAccount, disconnectAccount, notify, social } = useApp()
+  const { accounts, connectAccount, disconnectAccount, notify, social, access, openPlans } = useApp()
+  const lim = access.limits
+  const nConnected = Object.keys(accounts).filter((k) => PLATFORMS[k]).length
   useLang()
   const [modal, setModal] = useState(null) // platform id
   const [user, setUser] = useState('')
@@ -35,6 +38,8 @@ export default function Accounts() {
   const isReal = (p) => Boolean(social.configured[p])
   const realEmail = modal === 'email' && prov === 'gmail' && isReal('email') // Gmail: OAuth de Google
   const open = (p) => {
+    if (!lim.platforms.includes(p)) return openPlans(t('{p} está disponible desde el plan {n}.', { p: PLATFORMS[p].name, n: planFor((l) => l.platforms.includes(p)).name }))
+    if (nConnected >= lim.accounts) return openPlans(t('Tu plan {a} permite hasta {n} cuentas conectadas. Desconecta una o sube de plan.', { a: access.plan.name, n: lim.accounts }))
     if (isReal(p) && p !== 'email') return realOAuth(p)
     setUser(''); setStep(0); setProv('gmail'); setModal(p)
   }
@@ -72,7 +77,9 @@ export default function Accounts() {
                   <button className="btn ghost" onClick={async () => { if (await disconnectAccount(p.id)) notify(t('Cuenta desconectada')) }}>{t('Desconectar')}</button>
                 </>
               ) : (
-                <button className="btn primary" onClick={() => open(p.id)}>{t('Iniciar sesión con {p}', { p: p.name })}</button>
+                lim.platforms.includes(p.id)
+                  ? <button className="btn primary" onClick={() => open(p.id)}>{t('Iniciar sesión con {p}', { p: p.name })}</button>
+                  : <button className="btn locked" onClick={() => open(p.id)}><Icon name="lock" size={15} /> {t('Disponible en {n}', { n: planFor((l) => l.platforms.includes(p.id)).name })}</button>
               )}
             </div>
           )

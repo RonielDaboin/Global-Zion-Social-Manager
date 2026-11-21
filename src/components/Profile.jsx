@@ -91,7 +91,7 @@ function Info({ label, value }) {
 }
 
 export default function Profile({ onLogout }) {
-  const { session: s } = useApp()
+  const { session: s, openPlans } = useApp()
   const use = useUsageTime(s.id)
   const [phone, setPhone] = useState(s.phone || '')
   const [loc, setLoc] = useState(s.location || '')
@@ -179,6 +179,7 @@ export default function Profile({ onLogout }) {
         <div className="pf-plan-name"><Icon name="star" size={22} /> <b>{plan.name}</b>{role.id === 'owner' && <span>· {t(role.name)}</span>}</div>
         <ul className="pf-perks">{plan.perks.map((k) => <li key={k}><Icon name="check" size={15} /> {t(k)}</li>)}</ul>
         {role.id === 'owner' && <p className="muted small">{t('Tienes acceso total como creador de la aplicación.')}</p>}
+        <button className="btn ghost" onClick={() => openPlans()}><Icon name="star" size={15} /> {t('Ver y comparar planes')}</button>
       </div>
       <div className="pf-stats">
         <Stat label={t('En esta sesión')} value={fmtDur(use.visit)} />

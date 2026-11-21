@@ -45,7 +45,11 @@ export default function Calendar({ edit }) {
   const closeDay = () => setDay(null)
   const duplicate = async (p) => {
     const id = Math.random().toString(36).slice(2, 9)
-    if (p.mediaType === 'video') { try { const b = await loadVideo(p.id); if (b) await saveVideo(id, b) } catch { /* ignore */ } }
+    if (p.mediaType === 'video') {
+      let b = null
+      try { b = await loadVideo(p.id); if (b) await saveVideo(id, b) } catch { /* ignore */ }
+      if (!b) return notify(t('El video de esta publicación ya no se guarda: solo queda una captura de referencia.'), 'err')
+    }
     const { results, publishedAt, publishedBy, ...rest } = p
     savePost({ ...rest, id, status: 'draft', scheduledAt: null, createdAt: when(p) + 1000 })
     notify(t('Publicación duplicada como borrador'))

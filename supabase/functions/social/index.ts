@@ -6,6 +6,7 @@
 //   supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...  # Gmail
 //   supabase functions deploy social --project-ref axshbrskybmydywwpdla
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { planOfUser, PLATFORMS_BY_PLAN, MAX_ACCOUNTS } from '../_shared/plan.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -258,12 +259,21 @@ Deno.serve(async (req) => {
     const uid = u.user.id
     const b = await req.json().catch(() => ({}))
     const platform = String(b.platform || '')
+    // Reglas del plan (app_metadata.plan): redes permitidas y número de cuentas conectadas
+    const plan = planOfUser(u.user.email, u.user.app_metadata?.plan)
+    if ((b.action === 'auth-url' || b.action === 'publish') && !PLATFORMS_BY_PLAN[plan].includes(platform)) {
+      throw new HttpError(403, 'Esta red no está incluida en tu plan. Sube de plan para usarla.')
+    }
 
     if (b.action === 'list') {
       const { data } = await admin.from('social_accounts').select('platform,account_id,username,name,avatar,connected_at,extra').eq('user_id', uid)
       return json({ configured, accounts: data || [] })
     }
     if (b.action === 'auth-url') {
+      const { data: mine } = await admin.from('social_accounts').select('platform').eq('user_id', uid)
+      if (!(mine || []).some((m: { platform: string }) => m.platform === platform) && (mine || []).length >= MAX_ACCOUNTS[plan]) {
+        throw new HttpError(403, `Tu plan permite hasta ${MAX_ACCOUNTS[plan]} cuentas conectadas. Desconecta una o sube de plan.`)
+      }
       const state = await makeState(platform, uid)
       return json({ url: authUrl(platform, String(b.redirectUri), state), state })
     }

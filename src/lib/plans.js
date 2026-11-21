@@ -1,15 +1,63 @@
-// Planes y roles del servicio.
-// OJO: esto es solo para mostrar en la interfaz. Cuando haya cobro real, el plan y el rol deben guardarse en el servidor
-// (app_metadata de Supabase o una tabla) porque user_metadata lo puede editar el propio usuario.
+// Planes y roles del servicio: Básico, PRO y PRO PLUS.
+// OJO: esto es lo que ve y puede usar el usuario en la interfaz. El plan real debe guardarse en el servidor
+// (app_metadata de Supabase) porque user_metadata lo puede editar el propio usuario. Las funciones de Supabase
+// (supabase/functions/_shared/plan.ts) repiten estas reglas para que no se puedan saltar desde el navegador.
 
-export const PLANS = {
-  free: { id: 'free', name: 'Gratis', tone: 'gray', perks: ['Publicaciones básicas', 'Hasta 2 redes conectadas'] },
-  pro: { id: 'pro', name: 'Pro', tone: 'blue', perks: ['Todas las redes sociales', 'Publicaciones programadas', 'Generador de textos con IA'] },
+const P_BASIC = ['instagram', 'facebook', 'twitter']
+const P_PRO = [...P_BASIC, 'tiktok', 'linkedin', 'youtube', 'email']
+const P_PLUS = [...P_PRO, 'whatsapp', 'whatsapp-business']
+
+// Límites y funciones de cada plan. Infinity = sin límite.
+export const LIMITS = {
+  basic: {
+    platforms: P_BASIC, accounts: 2, scheduledPerMonth: 0, templates: 5, multiFormat: false, stickers: false,
+    workshop: false, removeBg: false, upscale: false, video: false, videoMB: 0,
+    aiText: false, aiTextPerDay: 0, aiImage: false, autoPost: false, credits: false, priority: false,
+  },
+  pro: {
+    platforms: P_PRO, accounts: 6, scheduledPerMonth: 30, templates: 15, multiFormat: true, stickers: true,
+    workshop: true, removeBg: false, upscale: false, video: true, videoMB: 100,
+    aiText: true, aiTextPerDay: 20, aiImage: false, autoPost: false, credits: true, priority: false,
+  },
   pro_plus: {
-    id: 'pro_plus', name: 'Pro Plus', tone: 'gold',
-    perks: ['Todas las redes sociales', 'Publicaciones programadas sin límite', 'Generador de textos e imágenes con IA', 'Editor de imágenes y video', 'Soporte prioritario'],
+    platforms: P_PLUS, accounts: Infinity, scheduledPerMonth: Infinity, templates: Infinity, multiFormat: true, stickers: true,
+    workshop: true, removeBg: true, upscale: true, video: true, videoMB: 500,
+    aiText: true, aiTextPerDay: 100, aiImage: true, autoPost: true, credits: true, priority: true,
   },
 }
+
+export const PLANS = {
+  basic: {
+    id: 'basic', name: 'Básico', tone: 'gray', rank: 0, tagline: 'Para empezar a publicar',
+    perks: ['Instagram, Facebook y X', 'Hasta 2 cuentas conectadas', 'Publicar al momento y guardar borradores', 'Editor de imágenes con 5 plantillas', 'Textos con plantillas locales'],
+  },
+  pro: {
+    id: 'pro', name: 'PRO', tone: 'blue', rank: 1, tagline: 'Para quien publica a diario',
+    perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Textos con IA (20 al día) y Créditos IA'],
+  },
+  pro_plus: {
+    id: 'pro_plus', name: 'PRO PLUS', tone: 'gold', rank: 2, tagline: 'Todo incluido, sin límites',
+    perks: ['Todas las redes, incluido WhatsApp', 'Cuentas y programación sin límite', 'Imágenes con IA y publicación automática con IA', 'Quitar fondo y ampliar imágenes', 'Editor de video completo (hasta 500 MB)', 'Textos con IA (100 al día) y soporte prioritario'],
+  },
+}
+export const PLAN_LIST = [PLANS.basic, PLANS.pro, PLANS.pro_plus]
+
+// Filas de la tabla comparativa: [etiqueta, valor Básico, valor PRO, valor PRO PLUS]  (true/false = ✓/—)
+export const COMPARE = [
+  ['Redes sociales', 'Instagram, Facebook, X', '+ TikTok, LinkedIn, YouTube, Correo', '+ WhatsApp y WhatsApp Business'],
+  ['Cuentas conectadas', '2', '6', 'Sin límite'],
+  ['Publicar al momento y borradores', true, true, true],
+  ['Programar y calendario', false, '30 al mes', 'Sin límite'],
+  ['Plantillas de diseño', '5', '15', 'Todas (26)'],
+  ['Varios formatos a la vez y stickers', false, true, true],
+  ['Recortar y borrar en el taller de imagen', false, true, true],
+  ['Quitar fondo y ampliar imágenes', false, false, true],
+  ['Editor de video', false, 'Hasta 100 MB', 'Hasta 500 MB'],
+  ['Textos con IA', 'Plantillas locales', '20 al día', '100 al día'],
+  ['Imágenes con IA y publicación automática', false, false, true],
+  ['Créditos IA', false, true, true],
+  ['Soporte prioritario', false, false, true],
+]
 
 export const ROLES = {
   owner: { id: 'owner', name: 'Dueño y creador' },
@@ -27,6 +75,22 @@ export function accessOf(session) {
   const email = (session?.email || '').toLowerCase()
   const a = ASSIGNED[email] || {}
   const role = ROLES[session?.appRole] ? session.appRole : a.role || 'user'
-  const plan = PLANS[session?.appPlan] ? session.appPlan : a.plan || 'free'
-  return { role: ROLES[role], plan: PLANS[plan] }
+  const srv = session?.appPlan === 'free' ? 'basic' : session?.appPlan // 'free' era el nombre antiguo de Básico
+  const plan = PLANS[srv] ? srv : a.plan || 'basic'
+  return { role: ROLES[role], plan: PLANS[plan], limits: LIMITS[plan] }
+}
+
+/** Plan más barato que incluye algo (para el aviso «Disponible en …»). `test` recibe los límites de un plan. */
+export const planFor = (test) => PLAN_LIST.find((p) => test(LIMITS[p.id])) || PLANS.pro_plus
+
+// ---- Contadores de IA por día (en el navegador; el servidor bloquea además por plan) ----
+const dayKey = (uid) => `gz_aitext_${uid || 'anon'}_${new Date().toISOString().slice(0, 10)}`
+export const aiTextUsed = (uid) => { try { return Number(localStorage.getItem(dayKey(uid))) || 0 } catch { return 0 } }
+export const aiTextBump = (uid) => { try { localStorage.setItem(dayKey(uid), String(aiTextUsed(uid) + 1)) } catch { /* ignore */ } }
+
+/** Cuántas publicaciones programadas (o ya publicadas desde una programación) caen en el mes de `ts`. */
+export const scheduledInMonth = (posts, ts = Date.now(), skipId = null) => {
+  const d = new Date(ts), y = d.getFullYear(), m = d.getMonth()
+  return posts.filter((p) => p.id !== skipId && p.scheduledAt && ['scheduled', 'publishing', 'published', 'failed'].includes(p.status)
+    && new Date(p.scheduledAt).getFullYear() === y && new Date(p.scheduledAt).getMonth() === m).length
 }

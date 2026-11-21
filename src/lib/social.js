@@ -48,7 +48,7 @@ export async function handleOAuthCallback() {
 }
 
 /** Sube la imagen/video a Storage (bucket público) para que Instagram/Facebook puedan descargarlos. */
-async function uploadMedia(post, kind, src = post.image, tag = '') {
+async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error(t('Inicia sesión para continuar'))
   let blob, ext
@@ -63,6 +63,7 @@ async function uploadMedia(post, kind, src = post.image, tag = '') {
   const path = `${session.user.id}/${post.id}${tag}-${Date.now()}.${ext}`
   const { error } = await supabase.storage.from('post-media').upload(path, blob, { contentType: blob.type, upsert: true })
   if (error) throw new Error(error.message)
+  sink?.push(path)
   return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
 }
 
@@ -70,6 +71,7 @@ export async function publishPost(post, accounts) {
   const results = {}
   const media = {} // se sube una sola vez por publicación (video) o por formato (imagen)
   const isVideo = post.mediaType === 'video'
+  const videoPaths = [] // copias temporales del video en Storage: se borran al terminar para no llenar el almacenamiento
   const fmts = isVideo || !post.design ? [post.format] : designFormats(post.design)
   const imageUrl = async (fid) => {
     if (media[fid]) return media[fid]
@@ -93,7 +95,7 @@ export async function publishPost(post, accounts) {
       if (done.includes(fid)) continue
       try {
         const m = {}
-        if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video')
+        if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video', undefined, '', videoPaths)
         else if (post.image) m.imageUrl = await imageUrl(fid)
         const r = await socialCall('publish', {
           platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
@@ -107,7 +109,22 @@ export async function publishPost(post, accounts) {
     }
     results[p] = errors.length ? { ok: false, error: errors.join(' · '), done, ...main } : { ok: true, done, ...main }
   }
+  // Facebook descarga el video de forma asíncrona: si va en la publicación, se deja para la limpieza posterior
+  if (videoPaths.length && !post.platforms.includes('facebook')) await supabase.storage.from('post-media').remove(videoPaths).catch(() => {})
   return results
+}
+
+const VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i
+/** Borra de Storage los videos temporales de publicación con más de 1 h (ya los descargaron las redes). */
+export async function cleanupPostMedia() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const uid = session.user.id
+    const { data } = await supabase.storage.from('post-media').list(uid, { limit: 1000 })
+    const old = (data || []).filter((f) => VIDEO_EXT.test(f.name) && Date.now() - new Date(f.created_at || 0).getTime() > 3600000)
+    if (old.length) await supabase.storage.from('post-media').remove(old.map((f) => `${uid}/${f.name}`))
+  } catch { /* ignore */ }
 }
 
 // ---- Asistente de texto (plantillas locales, sin IA externa) ----

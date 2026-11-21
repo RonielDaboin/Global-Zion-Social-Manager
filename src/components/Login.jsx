@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { PLATFORMS } from '../lib/formats.js'
-import { Logo, ThemeToggle, LangToggle } from './ui.jsx'
+import { Logo, ThemeToggle, LangToggle, Icon } from './ui.jsx'
 import { Footer } from './Legal.jsx'
 
 const GoogleLogo = () => (
@@ -39,6 +39,27 @@ const PATHS = {
   send: <path d="M3 11l18-8-8 18-2-8z" />,
 }
 
+const WA_BUBBLE = 'M12 2.5a9.5 9.5 0 0 0-8.2 14.3L2.5 21.5l4.8-1.3A9.5 9.5 0 1 0 12 2.5z'
+const NET_GLYPH = {
+  instagram: <><rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="12" r="3.8" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="17.2" cy="6.8" r="1.2" /></>,
+  tiktok: PATHS.note,
+  facebook: <path d="M14 8V6.5c0-.7.3-1 1-1h1.5v-3H14C11.8 2.5 10.5 3.9 10.5 6V8H8v3h2.5v10.5H14V11h2.3l.4-3z" />,
+  twitter: <path d="M17.8 3h3.1l-6.8 7.7L22 21h-6.2l-4.9-6.3L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8zm-1.1 16.2h1.7L7.4 4.7H5.6z" />,
+  linkedin: <path d="M4 9h3.5v11H4zM5.75 3.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM10 9h3.3v1.5c.5-.9 1.7-1.8 3.4-1.8 3.4 0 4 2.2 4 5.1V20h-3.5v-5.4c0-1.3 0-2.9-1.8-2.9s-2 1.4-2 2.8V20H10z" />,
+  youtube: <path fillRule="evenodd" d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2C2 8.8 2 12 2 12s0 3.2.4 4.8a2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8c.4-1.6.4-4.8.4-4.8s0-3.2-.4-4.8zM10 15V9l5.2 3z" />,
+  whatsapp: <><path d={WA_BUBBLE} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><path d="M9 7.5c-.4 0-1 .6-1 1.6 0 2.7 3.2 6 6 6 1 0 1.7-.7 1.7-1.2l-.1-.5-1.8-.9-.8.9c-1-.4-2.4-1.8-2.9-2.9l.8-.8-.8-1.9z" /></>,
+  'whatsapp-business': <><path d={WA_BUBBLE} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><text x="12" y="16" textAnchor="middle" fontSize="10.5" fontWeight="800" fontFamily="Arial, sans-serif">B</text></>,
+  email: <><rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M4 7.5l8 6 8-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></>,
+}
+
+function NetIcon({ id }) {
+  return (
+    <b className="ni" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="currentColor">{NET_GLYPH[id]}</svg>
+    </b>
+  )
+}
+
 function AuthBg() {
   return (
     <div className="auth-bg" aria-hidden="true">
@@ -53,7 +74,7 @@ function AuthBg() {
 }
 
 export default function Login() {
-  const { login, register, loginWithGoogle } = useApp()
+  const { login, register, loginWithGoogle, openPlans } = useApp()
   useLang()
   const [mode, setMode] = useState('login')
   const [f, setF] = useState({ name: '', email: '', password: '' })
@@ -78,7 +99,10 @@ export default function Login() {
   return (
     <div className="auth">
       <AuthBg />
-      <div className="auth-top"><LangToggle /><ThemeToggle /></div>
+      <div className="auth-top">
+        <button type="button" className="link-plans" onClick={() => openPlans()}><Icon name="star" size={15} /> <span>{t('Ver planes')}</span></button>
+        <LangToggle /><ThemeToggle />
+      </div>
       <div className="auth-hero">
         <Logo big />
         <h1>{t('Crea, programa y controla tus publicaciones de')} <span className="grad">Instagram</span> {t('y')} <span className="grad">TikTok</span>.</h1>
@@ -89,8 +113,9 @@ export default function Login() {
           <li>📅 {t('Calendario y programación de publicaciones')}</li>
         </ul>
         <div className="net-pills">
-          {Object.values(PLATFORMS).map((p) => <span key={p.id} style={{ '--pc': p.color }}><i />{p.name}</span>)}
+          {Object.values(PLATFORMS).map((p) => <span key={p.id} style={{ '--pc': p.color }}><NetIcon id={p.id} />{p.name}</span>)}
         </div>
+        <button type="button" className="btn primary hero-plans" onClick={() => openPlans()}><Icon name="crown" size={16} /> {t('Ver planes: Básico, PRO y PRO PLUS')}</button>
       </div>
       <form className="auth-card" onSubmit={submit}>
         <h2>{mode === 'login' ? t('Iniciar sesión') : t('Crear cuenta')}</h2>

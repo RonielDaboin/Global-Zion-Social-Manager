@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
-import { publishPost, handleOAuthCallback, fetchSocial, socialCall } from './social.js'
+import { publishPost, cleanupPostMedia, handleOAuthCallback, fetchSocial, socialCall } from './social.js'
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
 import { deleteVideo, pushVideo } from './mediaStore.js'
 import { fetchPosts, upsertPosts, deletePosts } from './cloud.js'
+import { accessOf } from './plans.js'
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -21,6 +22,7 @@ export function AppProvider({ children }) {
   const [authReady, setAuthReady] = useState(false)
   const [toast, setToast] = useState(null)
   const [storageFull, setStorageFull] = useState(false)
+  const [plansHint, setPlansHint] = useState(null) // null = cerrado; '' = abierto; texto = abierto con un aviso
 
   const key = session ? session.id : 'anon'
   const [accounts, setAccounts] = useState({})
@@ -85,7 +87,7 @@ export function AppProvider({ children }) {
       const del = Object.keys(synced).filter((id) => !posts.some((p) => p.id === id))
       if (!up.length && !del.length) return
       try {
-        for (const p of up) if (p.mediaType === 'video') await pushVideo(p.id).catch(() => {})
+        for (const p of up) if (p.mediaType === 'video' && p.status !== 'published') await pushVideo(p.id).catch(() => {})
         await upsertPosts(session.id, up)
         await deletePosts(session.id, del)
         const next = { ...synced }
@@ -164,6 +166,8 @@ export function AppProvider({ children }) {
     return true
   }
 
+  useEffect(() => { if (session) cleanupPostMedia() }, [session?.id]) // eslint-disable-line
+
   useEffect(() => {
     if (!session) return
     handleOAuthCallback()
@@ -198,6 +202,7 @@ export function AppProvider({ children }) {
       results = Object.fromEntries((post.platforms || []).map((pl) => [pl, { ok: false, error: e?.message || String(e) }]))
     }
     const allOk = Object.values(results).every((r) => r.ok)
+    if (allOk && post.mediaType === 'video') deleteVideo(id) // ya publicado: no se guarda el video (ni en la nube ni local); queda solo la captura (post.image)
     setPosts((l) => l.map((p) => (p.id === id
       ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }
       : p)))
@@ -217,7 +222,12 @@ export function AppProvider({ children }) {
     return () => clearInterval(t)
   }, [session, publishNow])
 
+  const access = accessOf(session)
+  const openPlans = (hint = '') => setPlansHint(hint)
+  const closePlans = () => setPlansHint(null)
+
   const value = {
+    access, plansHint, openPlans, closePlans,
     session, authReady, register, login, loginWithGoogle, logout,
     accounts, connectAccount, disconnectAccount, social,
     posts, savePost, deletePost, publishNow,

@@ -6,6 +6,8 @@
 //   supabase functions deploy generate-texts --project-ref axshbrskybmydywwpdla
 // (usa el mismo secreto GEMINI_API_KEY que generate-caption)
 
+import { requirePlan } from '../_shared/plan.ts'
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -24,6 +26,8 @@ const ORDER = [MODEL, ...MODELS.filter((x) => x !== MODEL)]
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405)
+  const denied = requirePlan(req, 1)
+  if (denied) return json({ error: denied }, 403)
   const key = Deno.env.get('GEMINI_API_KEY')
   if (!key) return json({ error: 'Falta configurar GEMINI_API_KEY en el servidor' }, 500)
 

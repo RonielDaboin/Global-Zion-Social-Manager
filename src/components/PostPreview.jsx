@@ -8,7 +8,8 @@ import { PlatformLogo, StatusTag, Icon, fmtDate } from './ui.jsx'
 
 function Media({ p, vurl, className }) {
   if (p.mediaType === 'video' && vurl) return <video className={className} src={vurl} poster={p.image} controls playsInline />
-  return p.image ? <img className={className} src={p.image} alt="" /> : null
+  // Video ya publicado: solo se conserva una captura como referencia
+  return p.image ? <img className={className} src={p.image} alt={p.mediaType === 'video' ? t('Captura del video publicado') : ''} title={p.mediaType === 'video' ? t('Captura del video publicado') : undefined} /> : null
 }
 
 const Av = ({ name }) => <span className="sim-av">{(name || '?').replace('@', '').slice(0, 1).toUpperCase()}</span>
@@ -123,7 +124,7 @@ export default function PostPreview({ p, onClose, actions }) {
   const [tab, setTab] = useState(p.platforms[0])
   useLang()
   useEffect(() => {
-    if (p.mediaType !== 'video') return
+    if (p.mediaType !== 'video' || p.status === 'published') return
     let u
     loadVideo(p.id).then((b) => { if (b) { u = URL.createObjectURL(b); setVurl(u) } })
     return () => { if (u) URL.revokeObjectURL(u) }

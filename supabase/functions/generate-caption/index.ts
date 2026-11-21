@@ -7,6 +7,8 @@
 //
 // Por defecto exige un usuario con sesión iniciada (verify_jwt = true).
 
+import { requirePlan } from '../_shared/plan.ts'
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -39,6 +41,8 @@ Deno.serve(async (req) => {
     return json({ current: MODEL, models: names })
   }
   if (req.method !== 'POST') return json({ error: 'Método no permitido' }, 405)
+  const denied = requirePlan(req, 1)
+  if (denied) return json({ error: denied }, 403)
 
   let b: Record<string, unknown>
   try { b = await req.json() } catch { return json({ error: 'JSON inválido' }, 400) }
