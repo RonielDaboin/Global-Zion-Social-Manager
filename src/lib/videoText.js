@@ -14,7 +14,7 @@ export const TEXT_PRESETS = [
 
 export const newTextLayer = (o = {}) => ({
   id: uid(), text: 'Texto', font: 'Poppins', weight: 800, color: '#ffffff', size: 6,
-  x: 0.5, y: 0.5, align: 'center', bg: '', bgOpacity: 0.6, shadow: true, stroke: false, upper: false, fade: false,
+  x: 0.5, y: 0.5, rot: 0, align: 'center', bg: '', bgOpacity: 0.6, shadow: true, stroke: false, upper: false, fade: false,
   from: 0, to: 0, // segundos del video original; to = 0 → hasta el final
   ...o,
 })
@@ -46,25 +46,30 @@ const rrect = (ctx, x, y, w, h, r) => {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
 }
 
-const alphaAt = (l, t) => {
+const alphaAt = (l, t, noFade) => {
   if (t < l.from - 1e-3 || (l.to > 0 && t > l.to + 1e-3)) return 0
-  if (!l.fade) return 1
+  if (!l.fade || noFade) return 1
   const end = l.to > 0 ? l.to : Infinity
-  return Math.max(0, Math.min(1, (t - l.from) / 0.3 + 0.001, (end - t) / 0.3 + 0.001))
+  const fd = Math.max(0.05, l.fadeDur || 0.3) // duración del desvanecido (s)
+  return Math.max(0, Math.min(1, (t - l.from) / fd + 0.001, (end - t) / fd + 0.001))
 }
 
 /**
  * Dibuja los textos activos en el instante `t` (segundos del video original).
  * Devuelve las cajas dibujadas ({id,x,y,w,h} en píxeles) para poder arrastrarlas.
  */
-export function drawTextLayers(ctx, w, h, layers, t, selId = null) {
+// noFade: en la vista previa en pausa se muestra el texto completo (si no, justo al aparecer el desvanecido lo deja casi invisible)
+// handles: dibuja los tiradores de giro y tamaño del texto seleccionado (modo avanzado).
+// caret: {id, pos, color} dibuja el cursor de escritura parpadeante dentro del texto indicado.
+export function drawTextLayers(ctx, w, h, layers, t, selId = null, noFade = false, handles = false, caret = null) {
   const boxes = []
+  const hs = Math.max(8, w * 0.024) // radio de los tiradores
   ctx.save()
   ctx.filter = 'none'
   for (const l of layers || []) {
     const raw = l.text.replace(/\s+$/, '')
     if (!raw.trim()) continue
-    const a = alphaAt(l, t)
+    const a = alphaAt(l, t, noFade)
     if (a <= 0) continue
     const px = Math.max(6, (l.size / 100) * h)
     ctx.font = `${l.weight} ${px}px "${l.font}", sans-serif`
@@ -74,8 +79,13 @@ export function drawTextLayers(ctx, w, h, layers, t, selId = null) {
     const lh = px * 1.22
     const tw = Math.max(...lines.map((s) => ctx.measureText(s).width))
     const bw = tw + pad * 2, bh = lines.length * lh + pad * 2
-    const bx = Math.max(0, Math.min(w - bw, l.x * w - bw / 2))
-    const by = Math.max(0, Math.min(h - bh, l.y * h - bh / 2))
+    const rot = ((l.rot || 0) * Math.PI) / 180
+    // Sin giro la caja se mantiene dentro del video; con giro se respeta el centro elegido
+    const bx = rot ? l.x * w - bw / 2 : Math.max(0, Math.min(w - bw, l.x * w - bw / 2))
+    const by = rot ? l.y * h - bh / 2 : Math.max(0, Math.min(h - bh, l.y * h - bh / 2))
+    const cx = bx + bw / 2, cy = by + bh / 2
+    ctx.save()
+    if (rot) { ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-cx, -cy) }
     ctx.globalAlpha = a
     if (l.bg) {
       ctx.fillStyle = l.bg
@@ -94,12 +104,42 @@ export function drawTextLayers(ctx, w, h, layers, t, selId = null) {
       ctx.fillText(s, tx, ty)
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
     })
+    if (caret && caret.id === l.id) {
+      let pos = Math.min(caret.pos ?? text.length, text.length), li = 0
+      for (; li < lines.length - 1 && pos > lines[li].length; li++) pos -= lines[li].length + 1
+      const line = lines[li], lw = ctx.measureText(line).width
+      const x0 = l.align === 'left' ? tx : l.align === 'right' ? tx - lw : tx - lw / 2
+      const cxp = x0 + ctx.measureText(line.slice(0, pos)).width
+      const cyy = by + pad + lh * li + lh / 2
+      ctx.globalAlpha = 1
+      ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.1
+      ctx.fillStyle = caret.color
+      ctx.fillRect(cxp - px * 0.035, cyy - px * 0.55, Math.max(2, px * 0.07), px * 1.1)
+      ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0
+    }
+    const box = { id: l.id, x: bx, y: by, w: bw, h: bh, cx, cy, rot }
     if (selId === l.id) {
       ctx.globalAlpha = 1
       ctx.setLineDash([px * 0.25, px * 0.2]); ctx.lineWidth = Math.max(1.5, px * 0.05); ctx.strokeStyle = '#38bdf8'
       ctx.strokeRect(bx - 3, by - 3, bw + 6, bh + 6)
+      ctx.setLineDash([])
+      if (handles) {
+        // giro: círculo sobre el borde superior · tamaño: cuadrado en la esquina inferior derecha
+        const rh = { x: cx, y: by - 3 - hs * 2.2 }, sh = { x: bx + bw + 3, y: by + bh + 3 }
+        ctx.lineWidth = Math.max(1.5, hs * 0.14)
+        ctx.beginPath(); ctx.moveTo(cx, by - 3); ctx.lineTo(rh.x, rh.y); ctx.stroke()
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#38bdf8'
+        ctx.beginPath(); ctx.arc(rh.x, rh.y, hs, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+        ctx.fillStyle = '#38bdf8'; ctx.font = `700 ${hs * 1.4}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText('\u21BB', rh.x, rh.y + hs * 0.05)
+        ctx.fillStyle = '#fff'
+        ctx.beginPath(); ctx.rect(sh.x - hs, sh.y - hs, hs * 2, hs * 2); ctx.fill(); ctx.stroke()
+        ctx.fillStyle = '#38bdf8'; ctx.fillText('\u2921', sh.x, sh.y + hs * 0.05)
+        box.rotH = rh; box.sizeH = sh; box.hs = hs
+      }
     }
-    boxes.push({ id: l.id, x: bx, y: by, w: bw, h: bh })
+    ctx.restore()
+    boxes.push(box)
   }
   ctx.restore()
   return boxes

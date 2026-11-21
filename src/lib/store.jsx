@@ -47,7 +47,12 @@ export function AppProvider({ children }) {
       syncedRef.current = Object.fromEntries(remote.map((p) => [p.id, JSON.stringify(p)]))
       cloudReady.current = true
       write(`gz_cloud_${key}`, true)
-      setPosts(merged)
+      // Lo que se está publicando en este momento solo existe en memoria: se conserva al recargar la lista
+      setPosts((cur) => {
+        const busy = cur.filter((p) => p.status === 'publishing')
+        const ids2 = new Set(busy.map((p) => p.id))
+        return [...busy, ...merged.filter((p) => !ids2.has(p.id))]
+      })
     }).catch(() => notify(t('No se pudo conectar con la nube; se usan los datos locales'), 'err'))
     // Cuentas reales (tokens en el servidor) + qué redes están configuradas
     fetchSocial().then((r) => {
@@ -59,7 +64,10 @@ export function AppProvider({ children }) {
       }]))
       setAccounts((a) => ({ ...Object.fromEntries(Object.entries(a).filter(([, v]) => !v.real)), ...real }))
     })
-  }, [key, session])
+    // Solo depende del usuario (key): antes dependía del objeto de sesión, que se recreaba en cada evento de Supabase
+    // (volver a la pestaña, renovar token, guardar el perfil) y recargaba las publicaciones a mitad de una publicación.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
 
   // Solo las cuentas demo se guardan en el navegador; las reales viven en el servidor
   useEffect(() => { if (loadedFor.current === key) write(`gz_accounts_${key}`, Object.fromEntries(Object.entries(accounts).filter(([, v]) => !v.real))) }, [accounts, key])
@@ -100,14 +108,16 @@ export function AppProvider({ children }) {
   }, [toast])
 
   // ---- Auth con Supabase ----
+  // Si los datos del usuario no cambiaron se conserva el mismo objeto (evita renders y recargas innecesarias)
+  const setSess = (u) => setSession((prev) => { const n = toSession(u); return JSON.stringify(prev) === JSON.stringify(n) ? prev : n })
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSession(toSession(data.session?.user)); setAuthReady(true)
+      setSess(data.session?.user); setAuthReady(true)
       // La sesión guardada puede ser antigua (sin foto/identidad de Google): se pide el usuario fresco al servidor
-      if (data.session) supabase.auth.getUser().then(({ data: d }) => { if (d?.user) setSession(toSession(d.user)) })
+      if (data.session) supabase.auth.getUser().then(({ data: d }) => { if (d?.user) setSess(d.user) })
     })
     const { data: sub } = supabase.auth.onAuthStateChange((e, s) => {
-      setSession(toSession(s?.user))
+      setSess(s?.user)
       // Google a veces no incluye la foto en el token de identidad: se pide al endpoint userinfo con el token de este inicio de sesión
       if (e === 'SIGNED_IN' && s?.provider_token && !toSession(s.user).picture) {
         fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + s.provider_token } })
@@ -182,7 +192,11 @@ export function AppProvider({ children }) {
     const post = postsRef.current.find((p) => p.id === id)
     if (!post) return
     setPosts((l) => l.map((p) => (p.id === id ? { ...p, status: 'publishing' } : p)))
-    const results = await publishPost(post, accountsRef.current)
+    let results
+    try { results = await publishPost(post, accountsRef.current) } catch (e) {
+      // Un error inesperado no debe dejar la publicación "publicando…" para siempre
+      results = Object.fromEntries((post.platforms || []).map((pl) => [pl, { ok: false, error: e?.message || String(e) }]))
+    }
     const allOk = Object.values(results).every((r) => r.ok)
     setPosts((l) => l.map((p) => (p.id === id
       ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }

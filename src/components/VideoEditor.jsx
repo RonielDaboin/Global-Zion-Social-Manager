@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { PLATFORMS } from '../lib/formats.js'
-import { Icon } from './ui.jsx'
+import { Icon, useCineTheme, CineThemeSwitch } from './ui.jsx'
 import FontPicker from './FontPicker.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { TEXT_PRESETS, newTextLayer, drawTextLayers, ensureTextFonts, hasText } from '../lib/videoText.js'
@@ -39,6 +40,60 @@ const SLIDERS = [
   ['hue', 'Tono', -180, 180], ['sepia', 'Sepia', 0, 100], ['gray', 'Blanco y negro', 0, 100], ['blur', 'Desenfoque', 0, 10], ['sharp', 'Nitidez', 0, 100], ['vignette', 'Viñeta', 0, 100],
 ]
 const r1 = (n) => Math.round(n * 10) / 10
+const CARET_COLORS = ['#f58529', '#dd2a7b', '#8134af', '#25f4ee']
+const DEFAULT_TEXTS = new Set([...TEXT_PRESETS.map((p) => p[1].text), 'Texto'])
+
+/** Línea de tiempo de los textos: cada texto es una barra que se arrastra (mover) o se estira desde sus bordes (aparece/desaparece). */
+function TextTimeline({ texts, selT, onSelect, dur, cur, onSeek, onPatch }) {
+  const track = useRef(null)
+  const drag = useRef(null)
+  const MIN = 0.3
+  const timeAt = (e) => { const r = track.current.getBoundingClientRect(); return Math.max(0, Math.min(dur, ((e.clientX - r.left) / r.width) * dur)) }
+  const down = (e, l, kind) => {
+    e.stopPropagation(); e.preventDefault()
+    onSelect(l.id)
+    drag.current = { id: l.id, kind, t0: timeAt(e), from0: l.from, end0: l.to > 0 ? l.to : dur }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const move = (e) => {
+    const d = drag.current
+    if (!d) return
+    const t = timeAt(e)
+    if (d.kind === 'from') {
+      const f = Math.max(0, r1(Math.min(t, d.end0 - MIN)))
+      onPatch(d.id, { from: f }); onSeek(f)
+    } else if (d.kind === 'to') {
+      const v = Math.max(t, d.from0 + MIN)
+      onPatch(d.id, { to: v >= dur - 0.05 ? 0 : r1(v) }); onSeek(Math.min(v, dur))
+    } else {
+      const len = d.end0 - d.from0
+      const f = r1(Math.max(0, Math.min(dur - len, d.from0 + (t - d.t0))))
+      const to = r1(f + len)
+      onPatch(d.id, { from: f, to: to >= dur - 0.05 ? 0 : to }); onSeek(f)
+    }
+  }
+  const up = () => { drag.current = null }
+  const pc = (x) => (x / dur) * 100 + '%'
+  return (
+    <div className="ttl">
+      <div className="ttl-track" ref={track} style={{ height: Math.max(1, texts.length) * 26 + 8 }} onPointerDown={(e) => onSeek(timeAt(e))}>
+        {texts.map((l, i) => {
+          const end = l.to > 0 ? l.to : dur
+          return (
+            <div key={l.id} className={'ttl-bar' + (l.id === selT ? ' on' : '')} style={{ left: pc(l.from), width: pc(Math.max(0.2, end - l.from)), top: 4 + i * 26 }}
+              onPointerDown={(e) => down(e, l, 'move')} onPointerMove={move} onPointerUp={up} onPointerCancel={up} title={l.text}>
+              <i className="ttl-h l" onPointerDown={(e) => down(e, l, 'from')} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+              <span>{l.text.replace(/\n/g, ' ').slice(0, 24) || '…'}</span>
+              <i className="ttl-h r" onPointerDown={(e) => down(e, l, 'to')} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+            </div>
+          )
+        })}
+        <div className="ttl-head" style={{ left: pc(Math.min(cur, dur)) }} />
+      </div>
+      <div className="ttl-scale"><span>0:00</span><span>{fmtTime(dur / 2)}</span><span>{fmtTime(dur)}</span></div>
+    </div>
+  )
+}
 
 export default function VideoEditor({ file, video, setVideo, setFile, platforms, notify }) {
   useLang()
@@ -52,6 +107,48 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const [fx, setFx] = useState(FX0)
   const [mute, setMute] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const [mode, setMode] = useState('basic') // 'basic' | 'adv'
+  const layerTxt = useRef(null)
+  const wantFocus = useRef(null) // 'all' | 'end': al hacer clic en un texto del visor, el cursor pasa al campo de texto
+  const [focusTick, setFocusTick] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [caretPos, setCaretPos] = useState(0)
+  const [blink, setBlink] = useState({ on: true, n: 0 }) // cursor parpadeante con los colores del logo
+  useEffect(() => {
+    if (!editing) return
+    setBlink({ on: true, n: 0 })
+    const id = setInterval(() => setBlink((b) => ({ on: !b.on, n: b.on ? b.n : b.n + 1 })), 480)
+    return () => clearInterval(id)
+  }, [editing])
+  useEffect(() => {
+    if (!wantFocus.current) return
+    const el = layerTxt.current
+    if (!el) return
+    const how = wantFocus.current
+    wantFocus.current = null
+    el.focus({ preventScroll: true })
+    if (how === 'all') el.select(); else el.setSelectionRange(el.value.length, el.value.length)
+    setCaretPos(el.selectionStart)
+  }, [focusTick])
+  const guide = useRef(null) // {x,y}: arrastrando un texto (y si está centrado en cada eje)
+  const [cine, setCine] = useState(false) // modo cine: vista grande en vivo con el panel al lado
+  const [cineLight, toggleCineTheme] = useCineTheme()
+  // El editor vive en un contenedor que se MUEVE al <body> en modo cine (sin remontar: el video, el recorte y los textos se conservan)
+  const host = useMemo(() => { const d = document.createElement('div'); d.style.display = 'contents'; return d }, [])
+  const slot = useRef(null)
+  useLayoutEffect(() => {
+    const target = cine ? document.body : slot.current
+    if (target && host.parentNode !== target) target.appendChild(host)
+  }, [cine, host])
+  useEffect(() => () => host.remove(), [host])
+  useEffect(() => {
+    if (!cine) return
+    const k = (e) => { if (e.key === 'Escape' && !['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName)) setCine(false) }
+    window.addEventListener('keydown', k)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', k); document.body.style.overflow = prev }
+  }, [cine])
   const [moreFx, setMoreFx] = useState(false)
   const [loop, setLoop] = useState(true) // repite el tramo para ver los cambios mientras se edita
   const [cur, setCur] = useState(0)
@@ -207,9 +304,23 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
     const ctx = c.getContext('2d')
     ctx.clearRect(0, 0, W, H)
-    boxes.current = drawTextLayers(ctx, W, H, texts, v.currentTime, busy ? null : selT)
+    boxes.current = drawTextLayers(ctx, W, H, texts, v.currentTime, busy ? null : selT, !playing && !busy, mode === 'adv' && !busy && !playing,
+      editing && blink.on && !playing && !busy && selT ? { id: selT, pos: caretPos, color: CARET_COLORS[blink.n % CARET_COLORS.length] } : null)
+    const g = guide.current
+    if (g) {
+      // Mientras se arrastra un texto: la mitad del ancho y del alto siempre visibles; en rosa al quedar centrado
+      const u = Math.max(1, W / 540)
+      ctx.save()
+      ctx.setLineDash([10 * u, 8 * u]); ctx.lineWidth = 1.6 * u; ctx.strokeStyle = 'rgba(255,255,255,.8)'
+      ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 3 * u
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke()
+      ctx.setLineDash([]); ctx.shadowBlur = 0; ctx.lineWidth = 3 * u; ctx.strokeStyle = '#ff3d8b'
+      if (g.x) { ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke() }
+      if (g.y) { ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke() }
+      ctx.restore()
+    }
   }
-  useEffect(() => { drawOverlay() }, [texts, selT, cur, url, fontTick, dur, busy]) // eslint-disable-line
+  useEffect(() => { drawOverlay() }, [texts, selT, cur, url, fontTick, dur, busy, playing, mode, editing, blink, caretPos]) // eslint-disable-line
   useEffect(() => { // mientras se reproduce se redibuja en cada fotograma (desvanecidos suaves)
     if (!playing) return
     let id
@@ -228,8 +339,9 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const tl = texts.find((l) => l.id === selT)
   const patchT = (p) => setTexts((a) => a.map((l) => (l.id === selT ? { ...l, ...p } : l)))
   const addText = (preset) => {
-    const from = r1(Math.max(trim.start, Math.min(cur, trim.end - 0.5)))
-    const to = from + 4 < trim.end - 0.05 ? r1(from + 4) : 0
+    // Básico: el texto dura todo el video. Avanzado: arranca donde está el video y dura 4 s (se ajusta en la línea de tiempo)
+    const from = mode === 'adv' ? r1(Math.max(trim.start, Math.min(cur, trim.end - 0.5))) : 0
+    const to = mode === 'adv' ? (from + 4 < trim.end - 0.05 ? r1(from + 4) : 0) : 0
     const l = newTextLayer({ ...(preset ? preset[1] : {}), from, to })
     setTexts((a) => [...a, l]); setSelT(l.id)
   }
@@ -239,27 +351,74 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     const c = ovRef.current, r = c.getBoundingClientRect()
     return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height, W: c.width, H: c.height }
   }
+  // Lleva un punto del lienzo al sistema de la caja (deshace el giro) para detectar toques sobre textos girados
+  const toLocal = (b, p) => {
+    const dx = p.x - b.cx, dy = p.y - b.cy, c = Math.cos(-b.rot), s = Math.sin(-b.rot)
+    return { x: b.cx + dx * c - dy * s, y: b.cy + dx * s + dy * c }
+  }
   const ovDown = (e) => {
     if (busy) return
     const p = ovPos(e)
-    const hit = [...boxes.current].reverse().find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h)
+    // 1) tiradores del texto seleccionado (solo en modo avanzado)
+    const sel = boxes.current.find((b) => b.id === selT && b.rotH)
+    if (sel) {
+      const q = toLocal(sel, p), near = (h) => Math.hypot(q.x - h.x, q.y - h.y) <= sel.hs * 1.6
+      if (near(sel.rotH)) { drag.current = { id: sel.id, mode: 'rot' }; e.currentTarget.setPointerCapture(e.pointerId); return }
+      if (near(sel.sizeH)) {
+        const l = texts.find((x) => x.id === sel.id)
+        drag.current = { id: sel.id, mode: 'size', size0: l.size, d0: Math.max(1, Math.hypot(p.x - sel.cx, p.y - sel.cy)) }
+        e.currentTarget.setPointerCapture(e.pointerId); return
+      }
+    }
+    // 2) mover un texto
+    const hit = [...boxes.current].reverse().find((b) => { const q = toLocal(b, p); return q.x >= b.x && q.x <= b.x + b.w && q.y >= b.y && q.y <= b.y + b.h })
     if (!hit) { setSelT(null); toggle(); return }
     setSelT(hit.id)
-    drag.current = { id: hit.id, ox: p.x - (hit.x + hit.w / 2), oy: p.y - (hit.y + hit.h / 2) }
+    drag.current = { id: hit.id, mode: 'move', ox: p.x - hit.cx, oy: p.y - hit.cy, sx: p.x, sy: p.y, moved: false }
+    guide.current = { x: false, y: false }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const ovMove = (e) => {
     const d = drag.current
     if (!d) return
     const p = ovPos(e)
-    const x = Math.min(1, Math.max(0, (p.x - d.ox) / p.W)), y = Math.min(1, Math.max(0, (p.y - d.oy) / p.H))
+    const b = boxes.current.find((x) => x.id === d.id)
+    if (d.mode === 'rot' && b) {
+      let deg = (Math.atan2(p.y - b.cy, p.x - b.cx) * 180) / Math.PI + 90
+      deg = ((deg + 540) % 360) - 180
+      const snap = Math.round(deg / 15) * 15
+      if (Math.abs(deg - snap) < 4) deg = snap // imanta a 0, 15, 45, 90 grados…
+      setTexts((a) => a.map((l) => (l.id === d.id ? { ...l, rot: Math.round(deg) } : l)))
+      return
+    }
+    if (d.mode === 'size' && b) {
+      const size = Math.min(30, Math.max(2, d.size0 * (Math.hypot(p.x - b.cx, p.y - b.cy) / d.d0)))
+      setTexts((a) => a.map((l) => (l.id === d.id ? { ...l, size: Math.round(size * 2) / 2 } : l)))
+      return
+    }
+    if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > 5 * Math.max(1, p.W / 540)) d.moved = true
+    let x = Math.min(1, Math.max(0, (p.x - d.ox) / p.W)), y = Math.min(1, Math.max(0, (p.y - d.oy) / p.H))
+    const T = 0.012 // imán al centro
+    const sx = Math.abs(x - 0.5) < T, sy = Math.abs(y - 0.5) < T
+    if (sx) x = 0.5
+    if (sy) y = 0.5
+    guide.current = { x: sx, y: sy }
     setTexts((a) => a.map((l) => (l.id === d.id ? { ...l, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 } : l)))
   }
-  const ovUp = () => { drag.current = null }
+  const ovUp = () => {
+    const d = drag.current
+    drag.current = null; guide.current = null; drawOverlay()
+    // Clic simple sobre un texto (sin arrastrar): se puede escribir de inmediato
+    if (d && d.mode === 'move' && !d.moved && !busy) {
+      const l = texts.find((x) => x.id === d.id)
+      if (l) { wantFocus.current = DEFAULT_TEXTS.has(l.text) ? 'all' : 'end'; setFocusTick((n) => n + 1) }
+    }
+  }
 
-  return (
-    <div className="editor">
-      <div className="stage">
+  const body = (
+    <div className={'editor' + (cine ? ' cine' : '') + (cine && cineLight ? ' cine-light' : '')}>
+      {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
+      <div className="stage vstage">
         <div className="canvas-wrap video-wrap" style={{ aspectRatio: video?.width ? `${video.width}/${video.height}` : '9/16' }}>
           {url
             ? <video ref={ref} src={url} playsInline preload="metadata" style={{ filter: fxCss(fx) }} onClick={toggle}
@@ -282,6 +441,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
         {dur > 0 && (
           <div className="vplayer">
             <button className="btn ghost sm" onClick={toggle} disabled={busy} aria-label={playing ? t('Pausar') : t('Reproducir')}>{playing ? '⏸' : '▶'}</button>
+            <button className={'btn ghost sm cine-btn' + (cine ? ' active' : '')} onClick={() => setCine((c) => !c)} title={t('Modo cine')} aria-label={t('Modo cine')} aria-pressed={cine}>🎬</button>
             <button className={'btn ghost sm vloop' + (loop ? ' on' : '')} onClick={() => setLoop(!loop)} aria-pressed={loop} title={t('Repetir en bucle')} aria-label={t('Repetir en bucle')}>🔁</button>
             <input type="range" min="0" max={dur} step="0.05" value={cur} onChange={(e) => scrub(+e.target.value)} disabled={busy} aria-label={t('Posición')} />
             <span className="muted small">{fmtTime(cur)} / {fmtTime(dur)}</span>
@@ -296,6 +456,10 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
       </div>
 
       <div className="tools">
+        <div className="seg full mode-seg" data-mode={mode}>
+          <button className={mode === 'basic' ? 'on' : ''} onClick={() => setMode('basic')}>{t('Básico')}</button>
+          <button className={mode === 'adv' ? 'on' : ''} onClick={() => setMode('adv')}>{t('Avanzado')}</button>
+        </div>
         <section>
           <h4>{t('Video')}</h4>
           <div className="row">
@@ -346,29 +510,66 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
               )}
               {tl && (
                 <div className="layer-ed">
-                  <textarea rows={2} value={tl.text} disabled={busy} onChange={(e) => patchT({ text: e.target.value })} />
+                  <textarea ref={layerTxt} rows={2} value={tl.text} disabled={busy} onChange={(e) => { patchT({ text: e.target.value }); setCaretPos(e.target.selectionStart) }}
+                    onFocus={(e) => { setEditing(true); setCaretPos(e.target.selectionStart) }} onBlur={() => setEditing(false)}
+                    onSelect={(e) => setCaretPos(e.target.selectionStart)} onKeyUp={(e) => setCaretPos(e.target.selectionStart)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() } }} />
+                  <div className="row">
+                    <label className="inl grow"><span className="lbl">{t('Tamaño')} <b>{tl.size}</b></span><input type="range" min="2" max="30" step="0.5" value={tl.size} onChange={(e) => patchT({ size: +e.target.value })} /></label>
+                    <input type="color" value={tl.color} onChange={(e) => patchT({ color: e.target.value })} aria-label={t('Color')} />
+                  </div>
+<div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
                   <div className="row fonts">
                     <FontPicker value={tl.font} onChange={(font) => patchT({ font })} />
                     <select value={tl.weight} onChange={(e) => patchT({ weight: +e.target.value })}>
                       <option value={400}>{t('Normal')}</option><option value={600}>{t('Seminegrita')}</option><option value={800}>{t('Negrita')}</option><option value={900}>{t('Extra')}</option>
                     </select>
-                    <input type="color" value={tl.color} onChange={(e) => patchT({ color: e.target.value })} aria-label={t('Color')} />
                   </div>
-                  <label className="inl"><span className="lbl">{t('Tamaño')} <b>{tl.size}</b></span><input type="range" min="2" max="20" step="0.5" value={tl.size} onChange={(e) => patchT({ size: +e.target.value })} /></label>
+                  <label className="inl"><span className="lbl">{t('Rotación')} <b>{tl.rot || 0}°</b></span>
+                    <input type="range" min="-180" max="180" step="1" value={tl.rot || 0} onChange={(e) => patchT({ rot: +e.target.value })} onDoubleClick={() => patchT({ rot: 0 })} title={t('Doble clic para restablecer')} />
+                  </label>
+                  <p className="muted small">{t('Sobre el video: ↻ gira y ⤡ cambia el tamaño del texto seleccionado.')}</p>
                   <div className="row">
                     <label className="inl grow">X<input type="range" min="0" max="1" step="0.01" value={tl.x} onChange={(e) => patchT({ x: +e.target.value })} /></label>
                     <label className="inl grow">Y<input type="range" min="0" max="1" step="0.01" value={tl.y} onChange={(e) => patchT({ y: +e.target.value })} /></label>
                   </div>
-                  <label className="inl">{t('Aparece en')} {fmtTime(tl.from)}
-                    <input type="range" min="0" max={dur} step="0.1" value={tl.from} onChange={(e) => { const f = +e.target.value; patchT({ from: f, to: tl.to > 0 && tl.to < f + 0.3 ? 0 : tl.to }); scrub(f) }} />
-                  </label>
-                  <label className="inl">{t('Desaparece en')} {tl.to > 0 ? fmtTime(tl.to) : t('el final')}
-                    <input type="range" min="0" max={dur} step="0.1" value={tl.to > 0 ? tl.to : dur} onChange={(e) => { const v = Math.max(+e.target.value, tl.from + 0.3); patchT({ to: v >= dur - 0.05 ? 0 : r1(v) }); scrub(Math.min(v, dur)) }} />
-                  </label>
-                  <div className="row">
-                    <button className="btn ghost sm" onClick={() => patchT({ from: r1(cur), to: tl.to > 0 && tl.to < cur + 0.3 ? 0 : tl.to })}>{t('Aparece aquí')}</button>
-                    <button className="btn ghost sm" onClick={() => patchT({ to: cur > tl.from + 0.3 ? r1(cur) : tl.to })}>{t('Desaparece aquí')}</button>
+                  <div className="tm-block">
+                    <h5>⏱ {t('Cuándo aparece')}</h5>
+                    <TextTimeline texts={texts} selT={selT} onSelect={setSelT} dur={dur} cur={cur} onSeek={scrub} onPatch={(id, p) => setTexts((arr) => arr.map((x) => (x.id === id ? { ...x, ...p } : x)))} />
+                    <p className="muted small">{t('Arrastra la barra para moverla y sus bordes para ajustar cuándo aparece y desaparece.')}</p>
+                    <div className="row">
+                      <label className="inl grow"><span className="lbl">{t('Aparece en')} <b>{tl.from.toFixed(1)} s</b></span>
+                        <input type="number" min="0" max={Math.max(0, (tl.to > 0 ? tl.to : dur) - 0.3)} step="0.1" value={tl.from} onChange={(e) => { const f = Math.max(0, Math.min(+e.target.value || 0, (tl.to > 0 ? tl.to : dur) - 0.3)); patchT({ from: r1(f) }); scrub(f) }} />
+                      </label>
+                      <label className="inl grow"><span className="lbl">{t('Desaparece en')} <b>{tl.to > 0 ? tl.to.toFixed(1) + ' s' : t('el final')}</b></span>
+                        <input type="number" min={r1(tl.from + 0.3)} max={dur} step="0.1" value={tl.to > 0 ? tl.to : r1(dur)} onChange={(e) => { const v = Math.max(+e.target.value || 0, tl.from + 0.3); patchT({ to: v >= dur - 0.05 ? 0 : r1(v) }); scrub(Math.min(v, dur)) }} />
+                      </label>
+                    </div>
+                    <div className="chips">
+                      <button className={'chip' + (tl.from <= 0.05 && !tl.to ? ' on' : '')} onClick={() => patchT({ from: 0, to: 0 })}>{t('Todo el video')}</button>
+                      {[2, 4, 6].map((n) => <button key={n} className="chip" onClick={() => patchT({ to: tl.from + n >= dur - 0.05 ? 0 : r1(tl.from + n) })}>{n} s</button>)}
+                      <button className="chip" onClick={() => patchT({ to: 0 })}>{t('Hasta el final')}</button>
+                    </div>
+                    <div className="row">
+                      <button className="btn ghost sm" onClick={() => patchT({ from: r1(cur), to: tl.to > 0 && tl.to < cur + 0.3 ? 0 : tl.to })}>{t('Aparece aquí')}</button>
+                      <button className="btn ghost sm" onClick={() => patchT({ to: cur > tl.from + 0.3 ? r1(cur) : tl.to })}>{t('Desaparece aquí')}</button>
+                      <button className="btn ghost sm" onClick={() => scrub(tl.from)} title={t('Ir al inicio del texto')}>⏮</button>
+                      <button className="btn ghost sm" onClick={() => scrub(Math.max(0, (tl.to > 0 ? tl.to : dur) - 0.05))} title={t('Ir al final del texto')}>⏭</button>
+                    </div>
+                    {tl.fade && (
+                      <label className="inl"><span className="lbl">{t('Duración del desvanecido')} <b>{(tl.fadeDur || 0.3).toFixed(1)} s</b></span>
+                        <input type="range" min="0.1" max="2" step="0.1" value={tl.fadeDur || 0.3} onChange={(e) => patchT({ fadeDur: +e.target.value })} />
+                      </label>
+                    )}
                   </div>
+                  </div></div>
+                  {mode === 'basic' && (tl.from > 0.05 || tl.to > 0
+                    ? <div className="tm-note warnish">
+                        <span>⏱ {t('Este texto aparece solo de {a} a {b}.', { a: tl.from.toFixed(1) + ' s', b: tl.to > 0 ? tl.to.toFixed(1) + ' s' : t('el final') })}</span>
+                        <button className="btn ghost sm" onClick={() => patchT({ from: 0, to: 0 })}>{t('Mostrar en todo el video')}</button>
+                      </div>
+                    : <p className="muted small">✓ {t('El texto se muestra durante todo el video. Para elegir cuándo aparece, usa el modo Avanzado.')}</p>)}
+<div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
                   <div className="row">
                     <div className="seg">
                       {['left', 'center', 'right'].map((a) => <button key={a} className={tl.align === a ? 'on' : ''} onClick={() => patchT({ align: a })}>{{ left: '⇤', center: '↔', right: '⇥' }[a]}</button>)}
@@ -383,6 +584,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
                     {tl.bg && <input type="color" value={tl.bg} onChange={(e) => patchT({ bg: e.target.value })} aria-label={t('Color de fondo')} />}
                   </div>
                   {tl.bg && <label className="inl"><span className="lbl">{t('Opacidad del fondo')} <b>{Math.round(tl.bgOpacity * 100)}%</b></span><input type="range" min="10" max="100" value={Math.round(tl.bgOpacity * 100)} onChange={(e) => patchT({ bgOpacity: +e.target.value / 100 })} /></label>}
+                  </div></div>
                   <div className="row">
                     <button className="btn ghost sm" onClick={dupText}>{t('Duplicar')}</button>
                     <button className="btn danger sm" onClick={delText}><Icon name="trash" size={14} /> {t('Quitar texto')}</button>
@@ -403,11 +605,13 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
                 ))}
               </div>
               <button className="btn ghost sm" onClick={() => setMoreFx(!moreFx)} aria-expanded={moreFx}>{moreFx ? t('Ver menos') : t('Ver más')}</button>
+              <div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
               {SLIDERS.map(([k, label, min, max]) => (
-                <label className="inl" key={k}>{t(label)} <span className="muted">{fx[k]}</span>
+                <label className="inl" key={k}><span className="lbl">{t(label)} <b>{fx[k]}</b></span>
                   <input type="range" min={min} max={max} step="1" value={fx[k]} disabled={busy} onChange={(e) => setFx({ ...fx, [k]: +e.target.value })} />
                 </label>
               ))}
+              </div></div>
               <label className="inl chk"><input type="checkbox" checked={mute} disabled={busy} onChange={(e) => setMute(e.target.checked)} /> {t('Quitar el audio')}</label>
             </section>
 
@@ -445,4 +649,5 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
       </div>
     </div>
   )
+  return <><div ref={slot} style={{ display: 'contents' }} />{createPortal(body, host)}</>
 }

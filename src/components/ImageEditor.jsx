@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FORMATS, TEMPLATES, designFormats, getFormat, newLayer, uid } from '../lib/formats.js'
 import { drawDesign, ensureFonts, loadImage, renderToDataURL, FX_DEFAULT } from '../lib/render.js'
-import { Icon } from './ui.jsx'
+import { Icon, useCineTheme, CineThemeSwitch } from './ui.jsx'
 import FontPicker from './FontPicker.jsx'
 import EmojiButton from './EmojiPicker.jsx'
 import Stickers from './Stickers.jsx'
@@ -68,7 +68,9 @@ export default function ImageEditor({ design, setDesign }) {
   const [guides, setGuides] = useState(true)
   const [full, setFull] = useState(false)
   const [cine, setCine] = useState(false) // modo cine: vista grande en vivo con el panel al lado
+  const [cineLight, toggleCineTheme] = useCineTheme()
   const [snap, setSnap] = useState({ x: false, y: false })
+  const [moving, setMoving] = useState(false) // arrastrando un texto: se muestran las líneas del centro
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiImage, setAiImage] = useState(null) // última imagen generada con IA, para reutilizarla sin regenerar
   const [upImage, setUpImage] = useState(null) // última imagen subida; cada origen se conserva por separado
@@ -130,14 +132,19 @@ export default function ImageEditor({ design, setDesign }) {
       }
       ctx.restore()
     }
-    if (snap.x || snap.y) {
+    if (moving || snap.x || snap.y) {
+      // Mientras se arrastra: la mitad del ancho y del alto siempre visibles; se resaltan en rosa al quedar centrado
       ctx.save()
-      ctx.lineWidth = 3; ctx.strokeStyle = '#ff3d8b'
+      const u = Math.max(1, fmt.w / 540)
+      ctx.setLineDash([10 * u, 8 * u]); ctx.lineWidth = 1.6 * u; ctx.strokeStyle = 'rgba(255,255,255,.75)'
+      ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 3 * u
+      ctx.beginPath(); ctx.moveTo(fmt.w / 2, 0); ctx.lineTo(fmt.w / 2, fmt.h); ctx.moveTo(0, fmt.h / 2); ctx.lineTo(fmt.w, fmt.h / 2); ctx.stroke()
+      ctx.setLineDash([]); ctx.shadowBlur = 0; ctx.lineWidth = 3 * u; ctx.strokeStyle = '#ff3d8b'
       if (snap.x) { ctx.beginPath(); ctx.moveTo(fmt.w / 2, 0); ctx.lineTo(fmt.w / 2, fmt.h); ctx.stroke() }
       if (snap.y) { ctx.beginPath(); ctx.moveTo(0, fmt.h / 2); ctx.lineTo(fmt.w, fmt.h / 2); ctx.stroke() }
       ctx.restore()
     }
-  }, [design, img, sel, tick, fmt.w, fmt.h, guides, snap, mode, editing, blink, caretPos, cine]) // eslint-disable-line
+  }, [design, img, sel, tick, fmt.w, fmt.h, guides, snap, moving, mode, editing, blink, caretPos, cine]) // eslint-disable-line
 
   useEffect(() => {
     if (!editing) return
@@ -208,6 +215,7 @@ export default function ImageEditor({ design, setDesign }) {
       wrapRef.current?.focus({ preventScroll: true })
       const l = design.layers.find((x) => x.id === hit.id)
       drag.current = { id: hit.id, dx: p.x - l.x * fmt.w, dy: p.y - l.y * fmt.h }
+      setMoving(true)
       e.currentTarget.setPointerCapture(e.pointerId)
     }
   }
@@ -236,7 +244,7 @@ export default function ImageEditor({ design, setDesign }) {
     if (sx !== snap.x || sy !== snap.y) setSnap({ x: sx, y: sy })
     setDesign({ ...design, layers: design.layers.map((l) => (l.id === d.id ? { ...l, x, y } : l)) })
   }
-  const up = () => { drag.current = null; if (snap.x || snap.y) setSnap({ x: false, y: false }) }
+  const up = () => { drag.current = null; setMoving(false); if (snap.x || snap.y) setSnap({ x: false, y: false }) }
   const key = (e) => {
     const inField = e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT'
     if ((e.ctrlKey || e.metaKey) && !inField && ['c', 'x', 'v', 'd'].includes(e.key.toLowerCase())) {
@@ -399,8 +407,8 @@ export default function ImageEditor({ design, setDesign }) {
   }
 
   const body = (
-    <div className={'editor' + (cine ? ' cine' : '')}>
-      {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
+    <div className={'editor' + (cine ? ' cine' : '') + (cine && cineLight ? ' cine-light' : '')}>
+      {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
       <div className="stage">
         <div className="stage-bar">
           <button className="btn ghost sm" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title="Zoom -">−</button>

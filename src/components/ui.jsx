@@ -68,6 +68,24 @@ export function ThemeToggle({ className = '' }) {
   )
 }
 
+/** Tema propio del modo cine (claro/oscuro), recordado en este navegador. Por defecto oscuro. */
+export function useCineTheme() {
+  const [light, setLight] = useState(() => { try { return localStorage.getItem('gz-cine-theme') === 'light' } catch { return false } })
+  const toggle = () => setLight((v) => { const n = !v; try { localStorage.setItem('gz-cine-theme', n ? 'light' : 'dark') } catch { /* ignore */ } return n })
+  return [light, toggle]
+}
+
+export function CineThemeSwitch({ light, onToggle }) {
+  useLang()
+  return (
+    <button className="cine-theme" role="switch" aria-checked={!light} onClick={onToggle} title={light ? t('Modo oscuro') : t('Modo claro')} aria-label={t('Cambiar tema')}>
+      <span className={'tsw' + (light ? '' : ' dark')} aria-hidden="true">
+        <Icon name="sun" size={13} /><Icon name="moon" size={13} /><i className="knob" />
+      </span>
+    </button>
+  )
+}
+
 const P = {
   home: 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z',
   plus: 'M12 5v14M5 12h14',
