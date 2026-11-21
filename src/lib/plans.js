@@ -12,19 +12,25 @@ export const LIMITS = {
   basic: {
     platforms: P_BASIC, accounts: 2, scheduledPerMonth: 0, templates: 5, multiFormat: false, stickers: false,
     workshop: false, removeBg: false, upscale: false, video: false, videoMB: 0,
+    animation: false, animMaxSec: 0, animAllMotions: false,
     aiText: false, aiTextPerDay: 0, aiImage: false, autoPost: false, credits: false, priority: false,
   },
   pro: {
     platforms: P_PRO, accounts: 6, scheduledPerMonth: 30, templates: 15, multiFormat: true, stickers: true,
     workshop: true, removeBg: false, upscale: false, video: true, videoMB: 100,
+    animation: true, animMaxSec: 30, animAllMotions: false,
     aiText: true, aiTextPerDay: 20, aiImage: false, autoPost: false, credits: true, priority: false,
   },
   pro_plus: {
     platforms: P_PLUS, accounts: Infinity, scheduledPerMonth: Infinity, templates: Infinity, multiFormat: true, stickers: true,
     workshop: true, removeBg: true, upscale: true, video: true, videoMB: 500,
+    animation: true, animMaxSec: 60, animAllMotions: true,
     aiText: true, aiTextPerDay: 100, aiImage: true, autoPost: true, credits: true, priority: true,
   },
 }
+
+// Movimientos de la sección Animación incluidos en PRO (PRO PLUS tiene todos)
+export const PRO_ANIM_MOTIONS = ['zoomin', 'zoomout', 'panl', 'panr', 'pulse', 'none']
 
 export const PLANS = {
   basic: {
@@ -33,11 +39,11 @@ export const PLANS = {
   },
   pro: {
     id: 'pro', name: 'PRO', tone: 'blue', rank: 1, tagline: 'Para quien publica a diario',
-    perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Textos con IA (20 al día) y Créditos IA'],
+    perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Animación con música (hasta 30 s y 6 movimientos)', 'Textos con IA (20 al día) y Créditos IA'],
   },
   pro_plus: {
     id: 'pro_plus', name: 'PRO PLUS', tone: 'gold', rank: 2, tagline: 'Todo incluido, sin límites',
-    perks: ['Todas las redes, incluido WhatsApp', 'Cuentas y programación sin límite', 'Imágenes con IA y publicación automática con IA', 'Quitar fondo y ampliar imágenes', 'Editor de video completo (hasta 500 MB)', 'Textos con IA (100 al día) y soporte prioritario'],
+    perks: ['Todas las redes, incluido WhatsApp', 'Cuentas y programación sin límite', 'Imágenes con IA y publicación automática con IA', 'Quitar fondo y ampliar imágenes', 'Editor de video completo (hasta 500 MB)', 'Animación con música: 21 movimientos y hasta 60 s', 'Textos con IA (100 al día) y soporte prioritario'],
   },
 }
 export const PLAN_LIST = [PLANS.basic, PLANS.pro, PLANS.pro_plus]
@@ -53,6 +59,10 @@ export const COMPARE = [
   ['Recortar y borrar en el taller de imagen', false, true, true],
   ['Quitar fondo y ampliar imágenes', false, false, true],
   ['Editor de video', false, 'Hasta 100 MB', 'Hasta 500 MB'],
+  ['Animación con música (imagen a video)', false, 'Hasta 30 s · 6 movimientos', 'Hasta 60 s · 21 movimientos'],
+  ['Visualizador de música (barras con altura, posición y color)', false, true, true],
+  ['Vista previa en vivo y modo cine en la animación', false, true, true],
+  ['Descargar copia del video al publicar o programar', false, true, true],
   ['Textos con IA', 'Plantillas locales', '20 al día', '100 al día'],
   ['Imágenes con IA y publicación automática', false, false, true],
   ['Créditos IA', false, true, true],

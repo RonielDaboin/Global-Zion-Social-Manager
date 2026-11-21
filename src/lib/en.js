@@ -851,5 +851,16 @@ const EN = {
   "Lunes 9:00": "Monday 9:00 AM",
   "Hora": "Time",
   "Listo": "Done",
+  "Animación con música (hasta 30 s y 6 movimientos)": "Animation with music (up to 30 s and 6 motions)",
+  "Animación con música: 21 movimientos y hasta 60 s": "Animation with music: 21 motions and up to 60 s",
+  "Animación con música (imagen a video)": "Animation with music (image to video)",
+  "Hasta 30 s · 6 movimientos": "Up to 30 s · 6 motions",
+  "Hasta 60 s · 21 movimientos": "Up to 60 s · 21 motions",
+  "La animación con música está disponible desde el plan PRO.": "Animation with music is available from the PRO plan.",
+  "Este movimiento está disponible en el plan PRO PLUS.": "This motion is available in the PRO PLUS plan.",
+  "Tu plan incluye 6 movimientos y hasta {n} s. Todos los movimientos y hasta 60 s están en PRO PLUS.": "Your plan includes 6 motions and up to {n} s. All motions and up to 60 s are in PRO PLUS.",
+  "Visualizador de música (barras con altura, posición y color)": "Music visualizer (bars with height, position and color)",
+  "Vista previa en vivo y modo cine en la animación": "Live preview and cinema mode in animation",
+  "Descargar copia del video al publicar o programar": "Download a copy of the video when publishing or scheduling",
 }
 export default EN

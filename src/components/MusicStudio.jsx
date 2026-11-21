@@ -4,13 +4,14 @@ import { t } from '../lib/i18n.jsx'
 import { getFormat } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
 import { useCineTheme, CineThemeSwitch } from './ui.jsx'
+import { PRO_ANIM_MOTIONS } from '../lib/plans.js'
 import { MOTION_GROUPS, audioDuration, canMakeMusicVideo, drawBars, runMusicVideo } from '../lib/musicVideo.js'
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2)
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
 /** Convierte la imagen diseñada en un video con música y movimiento. Entrega el resultado a `onCreated(file, meta)`. */
-export default function MusicStudio({ design, allowed, onLocked, onCreated, notify, maxMB }) {
+export default function MusicStudio({ design, lim, onLocked, onCreated, notify, maxMB }) {
   const [audio, setAudio] = useState(null)
   const [aDur, setADur] = useState(0)
   const [motion, setMotion] = useState('zoomin')
@@ -26,6 +27,8 @@ export default function MusicStudio({ design, allowed, onLocked, onCreated, noti
   const ctl = useRef({ cancel: false })
   const live = useRef({})
   const cv = useRef(null)
+  const allowed = !!lim.animation
+  const motionOk = (id) => lim.animAllMotions || PRO_ANIM_MOTIONS.includes(id)
   const supported = canMakeMusicVideo()
   const busy = !!mode
   const lock = mode === 'render' // en la vista previa se puede cambiar animación, barras y volumen en vivo
@@ -98,7 +101,7 @@ export default function MusicStudio({ design, allowed, onLocked, onCreated, noti
     } catch (ex) { notify(ex.message, 'err') }
   }
 
-  const maxDur = Math.max(3, Math.min(60, Math.floor((aDur || 60) - start)))
+  const maxDur = Math.max(3, Math.min(lim.animMaxSec || 60, Math.floor((aDur || 60) - start)))
   const d = Math.min(dur, maxDur)
 
   live.current = { motion, bars, barsH: barsH / 100, barsPos, barsColor, volume: vol, img: liveImg.current } // se lee en cada fotograma
@@ -141,6 +144,7 @@ export default function MusicStudio({ design, allowed, onLocked, onCreated, noti
       {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')} · {t('Animación')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
       {!cine && <h3 className="sub">🎞️ {t('Animación')} <em className="ms-opt">{t('(opcional)')}</em></h3>}
       {!cine && <p className="muted small">{t('Anima tu imagen y ponle música: elige el movimiento y el visualizador de barras. Usa solo música de tu propiedad o libre de derechos.')}</p>}
+      {allowed && !lim.animAllMotions && <p className="hint ms-plan" style={{ textAlign: 'left', justifyContent: 'flex-start' }}>🔒 {t('Tu plan incluye 6 movimientos y hasta {n} s. Todos los movimientos y hasta 60 s están en PRO PLUS.', { n: lim.animMaxSec })}</p>}
       {!supported && <p className="warn">⚠️ {t('Este navegador no puede crear videos. Prueba con Chrome o Edge.')}</p>}
       <div className={cine ? 'ms-cgrid' : 'ms-grid'}>
         <div className={cine ? 'stage ms-cstage' : 'ms-stage'}>
@@ -158,7 +162,7 @@ export default function MusicStudio({ design, allowed, onLocked, onCreated, noti
               <small>{t(g.label)}</small>
               <div className="ms-motions">
                 {g.items.map((m) => (
-                  <button key={m.id} type="button" disabled={lock} className={'chip' + (motion === m.id ? ' on' : '')} onClick={() => setMotion(m.id)}>{m.ico} {t(m.label)}</button>
+                  <button key={m.id} type="button" disabled={lock} className={'chip' + (motion === m.id ? ' on' : '') + (motionOk(m.id) ? '' : ' locked')} onClick={() => (motionOk(m.id) ? setMotion(m.id) : onLocked(t('Este movimiento está disponible en el plan PRO PLUS.')))}>{motionOk(m.id) ? m.ico : '🔒'} {t(m.label)}</button>
                 ))}
               </div>
             </div>

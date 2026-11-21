@@ -223,8 +223,8 @@ export default function Composer({ onDone, onDiscard }) {
           ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} maxMB={lim.videoMB} />
           : <>
             <ImageEditor design={design} setDesign={setDesign} />
-            <MusicStudio design={design} allowed={!!lim.video} maxMB={lim.videoMB || 100} notify={notify}
-              onLocked={() => openPlans(t('La música en imágenes está disponible desde el plan PRO.'))}
+            <MusicStudio design={design} lim={lim} maxMB={lim.videoMB || 100} notify={notify}
+              onLocked={(msg) => openPlans(msg || t('La animación con música está disponible desde el plan PRO.'))}
               onCreated={(file, meta) => { setVideoFile(file); setVideo(meta); setMediaType('video'); notify(t('¡Video con música listo! Revísalo y publícalo.')) }} />
           </>}
       </div>

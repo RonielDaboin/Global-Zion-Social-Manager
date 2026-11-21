@@ -2125,3 +2125,5 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 @keyframes wp-t-next { from { opacity: 0; transform: translateY(10px); } }
 @keyframes wp-t-prev { from { opacity: 0; transform: translateY(-10px); } }
 @media (prefers-reduced-motion: reduce) { .wp-days, .wp-title b { animation: none !important; } }
+
+.ms-motions .chip.locked { opacity: .55; }
