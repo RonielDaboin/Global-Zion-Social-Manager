@@ -7,6 +7,8 @@ import { t, useLang } from '../lib/i18n.jsx'
 import ImageEditor from './ImageEditor.jsx'
 import AutoPost from './AutoPost.jsx'
 import EmojiButton from './EmojiPicker.jsx'
+import WhenPicker from './WhenPicker.jsx'
+import MusicStudio from './MusicStudio.jsx'
 import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
@@ -219,7 +221,12 @@ export default function Composer({ onDone, onDiscard }) {
         <h3 className="sub">{isVideo ? t('Herramientas de video') : t('Herramientas de imagen')}</h3>
         {isVideo
           ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} maxMB={lim.videoMB} />
-          : <ImageEditor design={design} setDesign={setDesign} />}
+          : <>
+            <ImageEditor design={design} setDesign={setDesign} />
+            <MusicStudio design={design} allowed={!!lim.video} maxMB={lim.videoMB || 100} notify={notify}
+              onLocked={() => openPlans(t('La música en imágenes está disponible desde el plan PRO.'))}
+              onCreated={(file, meta) => { setVideoFile(file); setVideo(meta); setMediaType('video'); notify(t('¡Video con música listo! Revísalo y publícalo.')) }} />
+          </>}
       </div>
 
       <div className="card">
@@ -272,7 +279,7 @@ export default function Composer({ onDone, onDiscard }) {
         {!isVideo && fmts.length > 1 && platforms.includes('instagram') && igFeedCount > 1 && <p className="warn">⚠️ {t('Instagram publicará un solo post (“{f}”) y, si lo marcaste, la story.', { f: t(getFormat(fmts.find((f) => f !== 'ig-story')).label) })}</p>}
         {!isVideo && fmts.includes('ig-story') && platforms.includes('instagram') && <p className="hint" style={{ justifyContent: 'flex-start', textAlign: 'left' }}>{t('Las stories no llevan texto: lo que quieras mostrar debe ir dentro de la imagen.')}</p>}
         <div className="actions">
-          <label className="inl">{t('Programar para')}<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
+          <WhenPicker value={when} onChange={setWhen} />
           <button className="btn ghost" disabled={busy} onClick={() => run('draft')}>{t('Guardar borrador')}</button>
           <button className="btn blue" disabled={busy} onClick={() => run('scheduled')}><Icon name="clock" size={16} /> {t('Programar')}{!lim.scheduledPerMonth && <LockTag plan="PRO" />}</button>
           <button className="btn primary" disabled={busy} onClick={() => run('now')}><Icon name="send" size={16} /> {t('Publicar ahora')}</button>

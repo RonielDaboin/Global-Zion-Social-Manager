@@ -2029,3 +2029,99 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .save-copy input { margin-top: 3px; width: 18px; height: 18px; flex: none; accent-color: var(--blue, #3b82f6); }
 .save-copy b { display: block; font-size: 13.5px; }
 .save-copy small { display: block; margin-top: 3px; font-size: 12px; line-height: 1.4; opacity: .8; }
+
+/* Música y movimiento (imagen -> video) */
+.ms-wrap { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.ms-opt { font-style: normal; font-weight: 500; font-size: 12.5px; color: var(--muted); }
+.ms-grid { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 20px; align-items: start; margin-top: 12px; }
+.ms-stage { background: #000; border-radius: 14px; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--line); }
+.ms-stage canvas { width: 100%; max-height: 420px; object-fit: contain; display: block; }
+.ms-ctrl { display: grid; gap: 12px; min-width: 0; }
+.ms-pick { justify-self: start; cursor: pointer; }
+.ms-file { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.ms-motions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ms-row { display: grid; gap: 6px; font-size: 13px; }
+.ms-row input[type=range] { width: 100%; }
+.ms-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.ms-bar { height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--muted) 25%, transparent); overflow: hidden; }
+.ms-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3b82f6, #c026d3); transition: width .2s; }
+@media (max-width: 720px) { .ms-grid { grid-template-columns: 1fr; } .ms-stage canvas { max-height: 300px; } .ms-actions .btn { flex: 1 1 100%; } }
+
+.ms-group { display: grid; gap: 6px; }
+.ms-group small { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.ms-bars { display: grid; gap: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--card) 50%, transparent); }
+.ms-row2 { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.ms-color { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+.ms-color input { width: 36px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+
+/* Animación: modo cine propio (vista grande en vivo + controles al lado) */
+.ms-stage { position: relative; }
+.ms-cw { width: 100%; max-height: 420px; display: grid; place-items: center; }
+.ms-cw canvas { width: 100%; height: 100%; display: block; }
+.ms-cinebtn { position: absolute; top: 8px; right: 8px; z-index: 2; background: #000a !important; color: #fff !important; }
+.ms-cgrid { display: contents; }
+.editor.cine .stage.ms-cstage { grid-template-rows: minmax(0, 1fr); justify-items: center; }
+.editor.cine.ms-cine .ms-ctrl { align-content: start; }
+.editor.cine.ms-cine .ms-bars { background: #ffffff0d; border-color: #ffffff22; }
+.editor.cine.ms-cine .ms-bar { background: #ffffff22; }
+
+/* Selector de fecha y hora para programar */
+.actions .when { margin-right: auto; display: grid; gap: 8px; min-width: min(100%, 340px); }
+.when-l { font-size: 12px; color: var(--muted); }
+.when-box { position: relative; width: 100%; text-align: left; font: inherit; color: inherit; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 14px; cursor: pointer;
+  background: color-mix(in srgb, var(--card) 70%, transparent); border: 1px solid var(--line); transition: border-color .18s, box-shadow .18s, transform .18s; }
+.when-box:hover { border-color: #9b5cff99; box-shadow: 0 8px 22px -12px #7b3fe4cc; transform: translateY(-1px); }
+.when-box:focus-within { border-color: var(--violet, #8b5cf6); box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet, #8b5cf6) 28%, transparent); }
+.when-box.bad { border-color: var(--red, #ef4444); }
+.when-ico { font-size: 22px; line-height: 1; }
+.when-txt { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.when-txt b { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.when-txt small { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.when-box.bad small { color: var(--red, #ef4444); }
+.when-edit { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: color-mix(in srgb, var(--violet, #8b5cf6) 18%, transparent); color: var(--text); }
+.when-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.when-chips .chip { font-size: 12px; padding: 4px 10px; }
+@media (max-width: 720px) { .actions .when { width: 100%; margin-right: 0; } }
+
+/* Calendario propio */
+.when-box.open { border-color: var(--violet, #8b5cf6); }
+.wp { position: fixed; z-index: 80; width: 340px; max-width: calc(100vw - 16px); display: grid; grid-template-columns: 1fr 108px; gap: 0; border-radius: 18px; overflow: hidden; color: var(--text);
+  background: color-mix(in srgb, var(--card) 96%, #000); border: 1px solid var(--glass-line, var(--line)); box-shadow: 0 24px 60px -12px #000a, 0 0 0 1px #ffffff0d; animation: wp-in .16s ease-out; }
+@keyframes wp-in { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+.wp-cal { padding: 14px 12px 8px 14px; }
+.wp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }
+.wp-nav { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; transition: background .15s, transform .15s; }
+.wp-nav:hover { background: color-mix(in srgb, var(--violet, #8b5cf6) 22%, transparent); transform: scale(1.08); }
+.wp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.wp-wd { margin-bottom: 4px; } .wp-wd span { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: capitalize; }
+.wp-day { aspect-ratio: 1; border-radius: 50%; border: 0; background: transparent; color: inherit; font-size: 13px; cursor: pointer; font-variant-numeric: tabular-nums; transition: background .12s, transform .12s; }
+.wp-day:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--violet, #8b5cf6) 22%, transparent); transform: scale(1.1); }
+.wp-day.out { opacity: .38; } .wp-day:disabled { opacity: .2; cursor: not-allowed; }
+.wp-day.today:not(.on) { box-shadow: inset 0 0 0 1.5px var(--blue, #3b82f6); }
+.wp-day.on { background: linear-gradient(135deg, #3b82f6, #c026d3); color: #fff; font-weight: 800; box-shadow: 0 6px 14px -6px #c026d3cc; }
+.wp-time { border-left: 1px solid var(--line); padding: 14px 8px 8px; display: grid; grid-template-rows: auto 1fr; min-height: 0; background: color-mix(in srgb, var(--bg2, #000) 45%, transparent); }
+.wp-time small { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.wp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 262px; }
+.wp-col { overflow-y: auto; display: grid; align-content: start; gap: 3px; scrollbar-width: none; padding: 2px 0; }
+.wp-col::-webkit-scrollbar { display: none; }
+.wp-col button { padding: 7px 0; border: 0; border-radius: 10px; background: transparent; color: inherit; font-size: 13px; cursor: pointer; font-variant-numeric: tabular-nums; transition: background .12s; }
+.wp-col button:hover:not(.on) { background: color-mix(in srgb, var(--violet, #8b5cf6) 22%, transparent); }
+.wp-col button.on { background: linear-gradient(135deg, #3b82f6, #c026d3); color: #fff; font-weight: 800; }
+.wp-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.wp-bg { position: fixed; inset: 0; z-index: 80; background: #0009; display: flex; align-items: flex-end; justify-content: center; }
+.wp.sheet { position: static; width: 100%; max-width: 440px; border-radius: 20px 20px 0 0; animation: wp-up .2s ease-out; padding-bottom: env(safe-area-inset-bottom); }
+@keyframes wp-up { from { transform: translateY(40px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .wp, .wp.sheet { animation: none; } }
+
+/* Cambio de mes: el calendario se desliza en la dirección elegida */
+.wp-clip { overflow: hidden; margin: 0 -4px; padding: 0 4px; }
+.wp-title { display: inline-grid; overflow: hidden; }
+.wp-days.to-next { animation: wp-next .26s cubic-bezier(.22,.9,.3,1); }
+.wp-days.to-prev { animation: wp-prev .26s cubic-bezier(.22,.9,.3,1); }
+.wp-title b.to-next { animation: wp-t-next .26s cubic-bezier(.22,.9,.3,1); }
+.wp-title b.to-prev { animation: wp-t-prev .26s cubic-bezier(.22,.9,.3,1); }
+@keyframes wp-next { from { opacity: 0; transform: translateX(36px); } }
+@keyframes wp-prev { from { opacity: 0; transform: translateX(-36px); } }
+@keyframes wp-t-next { from { opacity: 0; transform: translateY(10px); } }
+@keyframes wp-t-prev { from { opacity: 0; transform: translateY(-10px); } }
+@media (prefers-reduced-motion: reduce) { .wp-days, .wp-title b { animation: none !important; } }
