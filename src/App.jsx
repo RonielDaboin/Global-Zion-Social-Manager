@@ -42,15 +42,6 @@ function PlanBadge({ access, onClick, className = '' }) {
   )
 }
 
-function Locked({ onPlans }) {
-  return (
-    <div className="page"><div className="card" style={{ textAlign: 'center', display: 'grid', gap: 12, justifyItems: 'center' }}>
-      <Icon name="lock" size={28} /><h3>{t('Función no incluida en tu plan')}</h3>
-      <button className="btn primary" onClick={onPlans}>{t('Ver planes')}</button>
-    </div></div>
-  )
-}
-
 export default function App() {
   const [legal, setLegal] = useState(legalFromHash)
   useEffect(() => {
@@ -100,7 +91,7 @@ export default function App() {
         <Logo />
         <PlanBadge access={access} onClick={() => go('profile')} className="side-plan" />
         <nav>
-          {NAV.filter((n) => n.id !== 'credits' || access.limits.credits).map((n) => (
+          {NAV.filter((n) => n.id !== 'credits' || access.role.id === 'owner').map((n) => (
             <button key={n.id} className={page === n.id ? 'nav on' : 'nav'} onClick={() => go(n.id)}>
               <Icon name={n.icon} /> <span>{t(n.label)}</span>
             </button>
@@ -144,7 +135,7 @@ export default function App() {
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}
         {page === 'accounts' && <Accounts />}
-        {page === 'credits' && (access.limits.credits ? <AICredits /> : <Locked onPlans={() => openPlans(t('Los Créditos IA están disponibles desde el plan PRO.'))} />)}
+        {page === 'credits' && access.role.id === 'owner' && <AICredits />}
         {page === 'profile' && <Profile onLogout={() => setAskOut(true)} />}
         <Footer />
       </main>

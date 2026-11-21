@@ -39,7 +39,7 @@ export const PLANS = {
   },
   pro: {
     id: 'pro', name: 'PRO', tone: 'blue', rank: 1, tagline: 'Para quien publica a diario',
-    perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Animación con música (hasta 30 s y 6 movimientos)', 'Textos con IA (20 al día) y Créditos IA'],
+    perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Animación con música (hasta 30 s y 6 movimientos)', 'Textos con IA (20 al día)'],
   },
   pro_plus: {
     id: 'pro_plus', name: 'PRO PLUS', tone: 'gold', rank: 2, tagline: 'Todo incluido, sin límites',
@@ -86,7 +86,6 @@ export const COMPARE = [
   ['Descargar copia del video al publicar o programar', false, true, true],
   ['Textos con IA', 'Plantillas locales', '20 al día', '100 al día'],
   ['Imágenes con IA y publicación automática', false, false, true],
-  ['Créditos IA', false, true, true],
   ['Soporte prioritario', false, false, true],
 ]
 
