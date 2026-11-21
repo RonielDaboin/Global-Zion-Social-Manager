@@ -81,6 +81,8 @@ const P = {
   check: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12.5l3 3 5-6',
   alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5v5M12 16v.5',
   draft: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
+  crown: 'M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z',
+  star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
   all: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 }
 export function Icon({ name, size = 18 }) {
@@ -88,6 +90,18 @@ export function Icon({ name, size = 18 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d={P[name]} />
     </svg>
+  )
+}
+
+/** Avatar del usuario: foto de Google o inicial del nombre, según su preferencia (avatarMode). */
+export function Avatar({ session, size = 36, mode }) {
+  const [bad, setBad] = useState(false)
+  const m = mode || session.avatarMode
+  const photo = session.picture && m !== 'initial' && !bad
+  return (
+    <div className="avatar" style={{ width: size, height: size, fontSize: Math.round(size * 0.4) }}>
+      {photo ? <img src={session.picture} alt="" referrerPolicy="no-referrer" onError={() => setBad(true)} /> : (session.name[0] || '?').toUpperCase()}
+    </div>
   )
 }
 

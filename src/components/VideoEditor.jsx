@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { PLATFORMS } from '../lib/formats.js'
 import { Icon } from './ui.jsx'
+import FontPicker from './FontPicker.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
+import { TEXT_PRESETS, newTextLayer, drawTextLayers, ensureTextFonts, hasText } from '../lib/videoText.js'
 import { FX0, PRESETS, fxCss, fxSame, vignetteCss, drawVignette, fxIsDefault, processVideo, canProcessVideo, canFilterVideo } from '../lib/videoProcess.js'
 
 export const MAX_VIDEO_MB = 500
@@ -54,11 +56,18 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const [loop, setLoop] = useState(true) // repite el tramo para ver los cambios mientras se edita
   const [cur, setCur] = useState(0)
   const [prog, setProg] = useState(null) // null = sin procesar; 0..1 = procesando
+  const [texts, setTexts] = useState([]) // textos sobre el video (títulos, subtítulos…)
+  const [selT, setSelT] = useState(null)
+  const [fontTick, setFontTick] = useState(0)
+  const ovRef = useRef(null)
+  const boxes = useRef([])
+  const drag = useRef(null)
 
   const dur = video?.duration || 0
   const trimmed = dur > 0 && (trim.start > 0.05 || trim.end < dur - 0.05)
   const filtered = !fxIsDefault(fx)
-  const dirty = trimmed || filtered || mute
+  const withText = hasText(texts)
+  const dirty = trimmed || filtered || mute || withText
   const canEdit = canProcessVideo()
   const busy = prog !== null
 
@@ -84,6 +93,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (canFilterVideo()) ctx.filter = fxCss(fx)
     ctx.drawImage(v, 0, 0, c.width, c.height)
     drawVignette(ctx, c.width, c.height, fx.vignette)
+    drawTextLayers(ctx, c.width, c.height, texts, at)
     return { cover: c.toDataURL('image/jpeg', 0.8), coverTime: at }
   }
 
@@ -95,7 +105,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (f.size > MAX_VIDEO_MB * 1048576) return notify(t('El video supera {n} MB.', { n: MAX_VIDEO_MB }), 'err')
     origRef.current = null
     wantCover.current = true
-    setFx(FX0); setMute(false)
+    setFx(FX0); setMute(false); setTexts([]); setSelT(null)
     setFile(f)
     setVideo({ name: f.name, size: f.size, duration: 0, width: 0, height: 0, cover: null, coverTime: 0 })
     setTime(0); setTrim({ start: 0, end: 0 })
@@ -159,12 +169,12 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     setProg(0)
     try {
       const src = origRef.current || file
-      const { blob, duration } = await processVideo(file, { start: trim.start, end: trim.end, fx, mute, onProgress: setProg, ctl: ctl.current })
+      const { blob, duration } = await processVideo(file, { start: trim.start, end: trim.end, fx, mute, texts, onProgress: setProg, ctl: ctl.current })
       origRef.current = src
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
       const out = new File([blob], video.name.replace(/\.[^.]+$/, '').replace(/-editado$/, '') + '-editado.' + ext, { type: blob.type })
       wantCover.current = true
-      setFx(FX0); setMute(false)
+      setFx(FX0); setMute(false); setTexts([]); setSelT(null)
       setVideo((old) => ({ ...old, name: out.name, size: out.size, duration, pending: false, edited: true }))
       setFile(out)
       if (ext === 'webm') notify(t('Tu navegador generó WebM. Instagram y Facebook prefieren MP4: usa Chrome o Edge actualizados.'), 'err')
@@ -178,12 +188,74 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (!f) return
     origRef.current = null
     wantCover.current = true
-    setFx(FX0); setMute(false)
+    setFx(FX0); setMute(false); setTexts([]); setSelT(null)
     setVideo((old) => ({ ...old, name: f.name, size: f.size, edited: false }))
     setFile(f)
   }
   const remove = () => { origRef.current = null; setFile(null); setVideo(null) }
   const warns = videoWarnings(video, platforms)
+
+  /* ---- Textos sobre el video ---- */
+  const fontKey = texts.map((l) => l.font + l.weight).join()
+  useEffect(() => { ensureTextFonts(texts).then(() => setFontTick((n) => n + 1)) }, [fontKey]) // eslint-disable-line
+  const drawOverlay = () => {
+    const c = ovRef.current, v = ref.current
+    if (!c || !v) return
+    const r = c.getBoundingClientRect()
+    const k = Math.min(2, window.devicePixelRatio || 1)
+    const W = Math.max(2, Math.round(r.width * k)), H = Math.max(2, Math.round(r.height * k))
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
+    const ctx = c.getContext('2d')
+    ctx.clearRect(0, 0, W, H)
+    boxes.current = drawTextLayers(ctx, W, H, texts, v.currentTime, busy ? null : selT)
+  }
+  useEffect(() => { drawOverlay() }, [texts, selT, cur, url, fontTick, dur, busy]) // eslint-disable-line
+  useEffect(() => { // mientras se reproduce se redibuja en cada fotograma (desvanecidos suaves)
+    if (!playing) return
+    let id
+    const loop = () => { drawOverlay(); id = requestAnimationFrame(loop) }
+    id = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(id)
+  }, [playing, texts, selT]) // eslint-disable-line
+  useEffect(() => {
+    const el = ovRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(drawOverlay)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }) // eslint-disable-line
+
+  const tl = texts.find((l) => l.id === selT)
+  const patchT = (p) => setTexts((a) => a.map((l) => (l.id === selT ? { ...l, ...p } : l)))
+  const addText = (preset) => {
+    const from = r1(Math.max(trim.start, Math.min(cur, trim.end - 0.5)))
+    const to = from + 4 < trim.end - 0.05 ? r1(from + 4) : 0
+    const l = newTextLayer({ ...(preset ? preset[1] : {}), from, to })
+    setTexts((a) => [...a, l]); setSelT(l.id)
+  }
+  const dupText = () => { if (!tl) return; const l = { ...tl, id: newTextLayer().id, x: Math.min(0.95, tl.x + 0.04), y: Math.min(0.95, tl.y + 0.04) }; setTexts((a) => [...a, l]); setSelT(l.id) }
+  const delText = () => { setTexts((a) => a.filter((l) => l.id !== selT)); setSelT(null) }
+  const ovPos = (e) => {
+    const c = ovRef.current, r = c.getBoundingClientRect()
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height, W: c.width, H: c.height }
+  }
+  const ovDown = (e) => {
+    if (busy) return
+    const p = ovPos(e)
+    const hit = [...boxes.current].reverse().find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h)
+    if (!hit) { setSelT(null); toggle(); return }
+    setSelT(hit.id)
+    drag.current = { id: hit.id, ox: p.x - (hit.x + hit.w / 2), oy: p.y - (hit.y + hit.h / 2) }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const ovMove = (e) => {
+    const d = drag.current
+    if (!d) return
+    const p = ovPos(e)
+    const x = Math.min(1, Math.max(0, (p.x - d.ox) / p.W)), y = Math.min(1, Math.max(0, (p.y - d.oy) / p.H))
+    setTexts((a) => a.map((l) => (l.id === d.id ? { ...l, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 } : l)))
+  }
+  const ovUp = () => { drag.current = null }
 
   return (
     <div className="editor">
@@ -197,6 +269,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
                 <input type="file" accept="video/*" hidden onChange={onPick} />
               </label>}
           {url && fx.vignette > 0 && <div className="vvig" style={{ background: vignetteCss(fx.vignette) }} />}
+          {url && <canvas ref={ovRef} className="vtext-ov" aria-label={t('Textos sobre el video')} onPointerDown={ovDown} onPointerMove={ovMove} onPointerUp={ovUp} onPointerCancel={ovUp} />}
           {busy && (
             <div className="vproc">
               <b>{t('Procesando…')} {Math.round(prog * 100)}%</b>
@@ -257,6 +330,68 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
             </section>
 
             <section>
+              <h4>📝 {t('Textos')}</h4>
+              <p className="muted small">{t('Agrega títulos, subtítulos y más sobre el video. Arrástralos sobre la imagen para moverlos y elige en qué momento aparecen.')}</p>
+              <div className="chips">
+                {TEXT_PRESETS.map((p) => <button key={p[0]} className="chip" disabled={busy} onClick={() => addText(p)}>+ {t(p[0])}</button>)}
+              </div>
+              {texts.length > 0 && (
+                <div className="chips">
+                  {texts.map((l, i) => (
+                    <button key={l.id} className={'chip' + (l.id === selT ? ' on' : '')} disabled={busy} onClick={() => setSelT(l.id)}>
+                      {i + 1}. {l.text.replace(/\n/g, ' ').slice(0, 14) || t('(vacío)')}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {tl && (
+                <div className="layer-ed">
+                  <textarea rows={2} value={tl.text} disabled={busy} onChange={(e) => patchT({ text: e.target.value })} />
+                  <div className="row fonts">
+                    <FontPicker value={tl.font} onChange={(font) => patchT({ font })} />
+                    <select value={tl.weight} onChange={(e) => patchT({ weight: +e.target.value })}>
+                      <option value={400}>{t('Normal')}</option><option value={600}>{t('Seminegrita')}</option><option value={800}>{t('Negrita')}</option><option value={900}>{t('Extra')}</option>
+                    </select>
+                    <input type="color" value={tl.color} onChange={(e) => patchT({ color: e.target.value })} aria-label={t('Color')} />
+                  </div>
+                  <label className="inl"><span className="lbl">{t('Tamaño')} <b>{tl.size}</b></span><input type="range" min="2" max="20" step="0.5" value={tl.size} onChange={(e) => patchT({ size: +e.target.value })} /></label>
+                  <div className="row">
+                    <label className="inl grow">X<input type="range" min="0" max="1" step="0.01" value={tl.x} onChange={(e) => patchT({ x: +e.target.value })} /></label>
+                    <label className="inl grow">Y<input type="range" min="0" max="1" step="0.01" value={tl.y} onChange={(e) => patchT({ y: +e.target.value })} /></label>
+                  </div>
+                  <label className="inl">{t('Aparece en')} {fmtTime(tl.from)}
+                    <input type="range" min="0" max={dur} step="0.1" value={tl.from} onChange={(e) => { const f = +e.target.value; patchT({ from: f, to: tl.to > 0 && tl.to < f + 0.3 ? 0 : tl.to }); scrub(f) }} />
+                  </label>
+                  <label className="inl">{t('Desaparece en')} {tl.to > 0 ? fmtTime(tl.to) : t('el final')}
+                    <input type="range" min="0" max={dur} step="0.1" value={tl.to > 0 ? tl.to : dur} onChange={(e) => { const v = Math.max(+e.target.value, tl.from + 0.3); patchT({ to: v >= dur - 0.05 ? 0 : r1(v) }); scrub(Math.min(v, dur)) }} />
+                  </label>
+                  <div className="row">
+                    <button className="btn ghost sm" onClick={() => patchT({ from: r1(cur), to: tl.to > 0 && tl.to < cur + 0.3 ? 0 : tl.to })}>{t('Aparece aquí')}</button>
+                    <button className="btn ghost sm" onClick={() => patchT({ to: cur > tl.from + 0.3 ? r1(cur) : tl.to })}>{t('Desaparece aquí')}</button>
+                  </div>
+                  <div className="row">
+                    <div className="seg">
+                      {['left', 'center', 'right'].map((a) => <button key={a} className={tl.align === a ? 'on' : ''} onClick={() => patchT({ align: a })}>{{ left: '⇤', center: '↔', right: '⇥' }[a]}</button>)}
+                    </div>
+                    <label className="check"><input type="checkbox" checked={tl.shadow} onChange={(e) => patchT({ shadow: e.target.checked })} /> {t('Sombra')}</label>
+                    <label className="check"><input type="checkbox" checked={tl.stroke} onChange={(e) => patchT({ stroke: e.target.checked })} /> {t('Contorno')}</label>
+                    <label className="check"><input type="checkbox" checked={tl.upper} onChange={(e) => patchT({ upper: e.target.checked })} /> {t('MAYÚS')}</label>
+                    <label className="check"><input type="checkbox" checked={tl.fade} onChange={(e) => patchT({ fade: e.target.checked })} /> {t('Desvanecer')}</label>
+                  </div>
+                  <div className="row">
+                    <label className="check"><input type="checkbox" checked={!!tl.bg} onChange={(e) => patchT({ bg: e.target.checked ? (tl.bg || '#000000') : '' })} /> {t('Fondo del texto')}</label>
+                    {tl.bg && <input type="color" value={tl.bg} onChange={(e) => patchT({ bg: e.target.value })} aria-label={t('Color de fondo')} />}
+                  </div>
+                  {tl.bg && <label className="inl"><span className="lbl">{t('Opacidad del fondo')} <b>{Math.round(tl.bgOpacity * 100)}%</b></span><input type="range" min="10" max="100" value={Math.round(tl.bgOpacity * 100)} onChange={(e) => patchT({ bgOpacity: +e.target.value / 100 })} /></label>}
+                  <div className="row">
+                    <button className="btn ghost sm" onClick={dupText}>{t('Duplicar')}</button>
+                    <button className="btn danger sm" onClick={delText}><Icon name="trash" size={14} /> {t('Quitar texto')}</button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section>
               <div className="row between">
                 <h4>🎨 {t('Filtros')}</h4>
                 <button className="btn ghost sm" disabled={busy || (filtered === false && !mute)} onClick={() => { setFx(FX0); setMute(false) }}>{t('Restablecer')}</button>
@@ -278,7 +413,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
 
             <section>
               <h4>{t('Aplicar cambios')}</h4>
-              <p className="muted small">{t('Se genera un video MP4 nuevo con el recorte y los filtros. Suele tardar menos que la duración del tramo.')}</p>
+              <p className="muted small">{t('Se genera un video MP4 nuevo con el recorte, los filtros y los textos. Suele tardar menos que la duración del tramo.')}</p>
               {dirty && !busy && <p className="warn">⚠️ {t('Tienes cambios sin aplicar: pulsa “Aplicar” antes de publicar.')}</p>}
               <div className="row">
                 <button className="btn primary sm" disabled={!dirty || busy || !canEdit} onClick={apply}>{busy ? t('Procesando…') : t('Aplicar')}</button>

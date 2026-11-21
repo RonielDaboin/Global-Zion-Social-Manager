@@ -3,6 +3,7 @@ import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { PLATFORMS } from '../lib/formats.js'
 import { Logo, ThemeToggle, LangToggle } from './ui.jsx'
+import { Footer } from './Legal.jsx'
 
 const GoogleLogo = () => (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
@@ -109,6 +110,7 @@ export default function Login() {
           </a>
         </p>
       </form>
+      <Footer className="auth-foot" />
     </div>
   )
 }

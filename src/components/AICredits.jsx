@@ -3,8 +3,16 @@ import { t, useLang } from '../lib/i18n.jsx'
 import { PROVIDERS, dayStart, getExtra, getLimit, loadSnapshots, loadUsage, setExtra as setExtraLS, setLimit } from '../lib/aiUsage.js'
 
 /** Cuotas por modelo copiadas de AI Studio («Límite de frecuencia»). Se sincronizan a pedido, no en tiempo real. */
-function SnapRows({ snap, appUsed }) {
-  const models = snap.data.models
+function SnapRows({ snap, appUsed, since }) {
+  // Peticiones hechas desde esta app después de la última lectura de AI Studio: se descuentan por orden de prioridad (la app usa primero el mejor modelo y pasa al siguiente al agotarse).
+  let rest = since
+  const models = snap.data.models.map((m) => {
+    if (!m.app || rest <= 0) return m
+    const free = Math.max(0, m.rpd[1] - m.rpd[0])
+    const take = Math.min(free, rest)
+    rest -= take
+    return take ? { ...m, rpd: [m.rpd[0] + take, m.rpd[1]] } : m
+  })
   const left = (m) => Math.max(0, m.rpd[1] - m.rpd[0])
   const mine = models.filter((m) => m.app)
   const others = models.filter((m) => !m.app)
@@ -30,6 +38,7 @@ function SnapRows({ snap, appUsed }) {
         {others.map((m) => <Row key={m.name} m={m} />)}
       </details>
       <p className="muted small">{t('Desde esta app hoy')}: <b>{appUsed}</b> {t('peticiones')}</p>
+      {since > 0 && <p className="muted small">{t('Incluye {n} peticiones hechas desde esta app después de la última sincronización (estimado).', { n: since })}</p>}
       <p className={ageH > 12 ? 'warn' : 'muted small'}>
         {ageH > 12 ? '⚠️ ' : '✅ '}{t('Sincronizado con AI Studio')}: {new Date(snap.taken_at).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
         {ageH > 12 ? ' · ' + t('puede estar desactualizado: pide a Claude que lo sincronice.') : ''}
@@ -39,6 +48,7 @@ function SnapRows({ snap, appUsed }) {
 }
 
 function Card({ p, rows, snap }) {
+  const sinceSnap = snap ? rows.filter((r) => r.provider === 'gemini' && r.status === 'ok' && r.kind !== 'Imágenes' && new Date(r.created_at) > new Date(snap.taken_at)).length : 0
   const [limit, setLim] = useState(() => getLimit(p))
   const start = dayStart(p.tz)
   const [extra, setExtra] = useState(() => getExtra(p, start)) // usadas hoy que la app no vio (antes del registro u otros usos)
@@ -63,7 +73,7 @@ function Card({ p, rows, snap }) {
   return (
     <div className="card ai-card">
       <h3>{p.name}</h3>
-      {useSnap ? <SnapRows snap={snap} appUsed={logged} /> : (<>
+      {useSnap ? <SnapRows snap={snap} appUsed={logged} since={sinceSnap} /> : (<>
       {limit ? (
         <>
           <div className="ai-big"><b>{exhausted ? t('Agotado') : left}</b> <span>{exhausted ? t('hoy') : `${t(p.unit)} ${t('restantes hoy')}`}</span></div>
@@ -96,10 +106,14 @@ export default function AICredits() {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState('')
   const [snaps, setSnaps] = useState({})
-  const load = useCallback(() => {
-    setErr('')
-    loadUsage().then(setRows).catch((e) => setErr(e.message || 'error'))
-    loadSnapshots().then(setSnaps).catch(() => {})
+  const [busy, setBusy] = useState(false)
+  const [at, setAt] = useState(null)
+  const load = useCallback(async () => {
+    setErr(''); setBusy(true)
+    const [u, sn] = await Promise.allSettled([loadUsage(), loadSnapshots()])
+    if (u.status === 'fulfilled') setRows(u.value); else setErr(u.reason?.message || 'error')
+    if (sn.status === 'fulfilled') setSnaps(sn.value)
+    setAt(new Date()); setBusy(false)
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -107,7 +121,10 @@ export default function AICredits() {
     <div className="page">
       <header className="ph row between">
         <div><h1>{t('Créditos IA')}</h1><p>{t('Una estimación de lo que te queda hoy en cada proveedor gratuito.')}</p></div>
-        <button className="btn ghost sm" onClick={load}>{t('Actualizar')}</button>
+        <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+          {at && !busy && <span className="muted small">{t('Actualizado')} {at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
+          <button className="btn ghost sm" onClick={load} disabled={busy}>{busy ? t('Actualizando…') : t('Actualizar')}</button>
+        </div>
       </header>
       {err && <div className="banner err">{t('No se pudo leer el registro de uso. ¿Aplicaste la migración ai_usage?')} ({err})</div>}
       <div className="ai-grid">

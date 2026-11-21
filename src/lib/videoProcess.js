@@ -2,6 +2,7 @@
 // Vía principal: WebCodecs (mediabunny) → decodifica, aplica ctx.filter y codifica H.264/AAC en MP4, más rápido que en tiempo real.
 // Respaldo: reproduce el tramo sobre un canvas y lo regraba con MediaRecorder (tarda lo que dura el tramo).
 import { t } from './i18n.jsx'
+import { drawTextLayers, ensureTextFonts, hasText } from './videoText.js'
 
 /** Saca `n` fotogramas repartidos por el video (JPEG reducido) para que la IA «vea» el video. Todo en el navegador, sin costo. */
 export async function extractFrames(file, n = 6, max = 512) {
@@ -139,7 +140,7 @@ const once = (el, ev) => new Promise((res, rej) => {
  * @param {{start:number,end:number,fx:object,mute:boolean,onProgress?:(p:number)=>void,ctl:{cancel:boolean}}} o
  * @returns {Promise<{blob:Blob,duration:number}>}
  */
-async function processRealtime(file, { start, end, fx, mute, onProgress, ctl }) {
+async function processRealtime(file, { start, end, fx, mute, texts, onProgress, ctl }) {
   const mime = pickMime()
   if (!mime) throw new Error(t('Este navegador no puede editar videos. Prueba con Chrome o Edge.'))
   const url = URL.createObjectURL(file)
@@ -172,7 +173,8 @@ async function processRealtime(file, { start, end, fx, mute, onProgress, ctl }) 
     v.currentTime = start
     await once(v, 'seeked')
     ctx.drawImage(v, 0, 0, w, h)
-    drawVignette(ctx, w, h, fx.vignette) // primer fotograma antes de grabar: evita parpadeo negro
+    drawVignette(ctx, w, h, fx.vignette)
+    drawTextLayers(ctx, w, h, texts, start) // primer fotograma antes de grabar: evita parpadeo negro
 
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6, audioBitsPerSecond: 128e3 })
     const chunks = []
@@ -189,6 +191,7 @@ async function processRealtime(file, { start, end, fx, mute, onProgress, ctl }) 
     const frame = () => {
       ctx.drawImage(v, 0, 0, w, h)
       drawVignette(ctx, w, h, fx.vignette)
+      drawTextLayers(ctx, w, h, texts, v.currentTime)
       const cur = v.currentTime
       onProgress?.(Math.max(0, Math.min(1, (cur - start) / (end - start))))
       if (ctl.cancel || cur >= end - 0.03 || v.ended) return finish()
@@ -213,12 +216,13 @@ async function processRealtime(file, { start, end, fx, mute, onProgress, ctl }) 
   }
 }
 
-async function processWebCodecs(file, { start, end, fx, mute, onProgress, ctl }) {
+async function processWebCodecs(file, { start, end, fx, mute, texts, onProgress, ctl }) {
+  await ensureTextFonts(texts)
   const mb = await import('mediabunny')
   const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS })
   const output = new mb.Output({ format: new mb.Mp4OutputFormat(), target: new mb.BufferTarget() })
   const filter = fxCss(fx)
-  const useFx = filter !== 'none' || fx.vignette > 0
+  const useFx = filter !== 'none' || fx.vignette > 0 || hasText(texts)
   const conv = await mb.Conversion.init({
     input, output,
     trim: { start, end },
@@ -232,7 +236,14 @@ async function processWebCodecs(file, { start, end, fx, mute, onProgress, ctl })
         cv.width = w; cv.height = h
         const ctx = cv.getContext('2d')
         ctx.filter = filter
-        o.process = (sample) => { sample.draw(ctx, 0, 0, w, h); drawVignette(ctx, w, h, fx.vignette); return cv }
+        // El instante de cada fotograma puede venir en la línea de tiempo del original o ya recortado: se detecta con el primero.
+        let shift = null
+        o.process = (sample) => {
+          if (shift === null) shift = start > 0.05 && sample.timestamp >= start - 0.05 ? 0 : start
+          sample.draw(ctx, 0, 0, w, h); drawVignette(ctx, w, h, fx.vignette)
+          drawTextLayers(ctx, w, h, texts, sample.timestamp + shift)
+          return cv
+        }
         o.processedWidth = w; o.processedHeight = h
       }
       return o
@@ -254,6 +265,8 @@ async function processWebCodecs(file, { start, end, fx, mute, onProgress, ctl })
 }
 
 export async function processVideo(file, opts) {
+  opts = { ...opts, texts: (opts.texts || []).filter((l) => l.text.trim()) }
+  await ensureTextFonts(opts.texts)
   if (hasWebCodecs()) {
     try { return await processWebCodecs(file, opts) } catch (e) {
       if (e.message === 'cancel' || opts.ctl.cancel) throw e

@@ -101,8 +101,21 @@ export function AppProvider({ children }) {
 
   // ---- Auth con Supabase ----
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setSession(toSession(data.session?.user)); setAuthReady(true) })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(toSession(s?.user)))
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(toSession(data.session?.user)); setAuthReady(true)
+      // La sesión guardada puede ser antigua (sin foto/identidad de Google): se pide el usuario fresco al servidor
+      if (data.session) supabase.auth.getUser().then(({ data: d }) => { if (d?.user) setSession(toSession(d.user)) })
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((e, s) => {
+      setSession(toSession(s?.user))
+      // Google a veces no incluye la foto en el token de identidad: se pide al endpoint userinfo con el token de este inicio de sesión
+      if (e === 'SIGNED_IN' && s?.provider_token && !toSession(s.user).picture) {
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + s.provider_token } })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((j) => { if (j?.picture) setTimeout(() => supabase.auth.updateUser({ data: { avatar_url: j.picture } }), 0) })
+          .catch(() => {})
+      }
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
