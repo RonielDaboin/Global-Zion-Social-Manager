@@ -2,16 +2,20 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
-import { PLAN_LIST, COMPARE } from '../lib/plans.js'
+import { PLAN_LIST, COMPARE, PRICES, fmtPrice, paypalReady } from '../lib/plans.js'
 import { Icon } from './ui.jsx'
+import PayPalButton from './PayPalButton.jsx'
 
 const Cell = ({ v }) => (v === true ? <Icon name="check" size={16} /> : v === false ? <span className="pl-no">—</span> : <span>{t(v)}</span>)
 
 /** Ventana con los tres planes y la tabla comparativa. Se abre desde el login, el perfil o al tocar algo bloqueado. */
 export default function PlansModal() {
-  const { plansHint, closePlans, session, access } = useApp()
+  const { plansHint, closePlans: close0, session, access, notify, logout } = useApp()
   useLang()
-  const open = plansHint !== null
+  // Con la prueba gratuita terminada el modal no se puede cerrar: hay que suscribirse (o salir de la cuenta)
+  const forced = !!session && access.expired && paypalReady // sin PayPal configurado no se bloquea a nadie
+  const closePlans = forced ? () => {} : close0
+  const open = plansHint !== null || forced
   useEffect(() => {
     if (!open) return
     const k = (e) => e.key === 'Escape' && closePlans()
@@ -22,13 +26,16 @@ export default function PlansModal() {
   }, [open, closePlans])
   if (!open) return null
   const cur = session ? access.plan.id : null
+  const rank = session ? access.plan.rank : -1
 
   return createPortal(
     <div className="modal-bg plans-bg" onClick={closePlans}>
       <div className="plans" role="dialog" aria-modal="true" aria-label={t('Planes')} onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn plans-x" aria-label={t('Cerrar')} onClick={closePlans}>✕</button>
+        {!forced && <button className="icon-btn plans-x" aria-label={t('Cerrar')} onClick={closePlans}>✕</button>}
         <h2>{t('Elige tu plan')}</h2>
-        <p className="muted">{t('Empieza con Básico y sube de plan cuando necesites más redes, programación o herramientas de IA.')}</p>
+        <p className="muted">{t('Prueba todo Básico gratis durante 15 días; después elige el plan que necesites.')}</p>
+        {forced && <p className="plans-hint"><Icon name="lock" size={15} /> {t('Tu prueba gratuita de 15 días terminó. Suscríbete para seguir usando la app.')}</p>}
+        {!forced && session && access.onTrial && <p className="plans-hint"><Icon name="star" size={15} /> {t('Te quedan {n} días de prueba gratuita.', { n: access.trialDaysLeft })}</p>}
         {plansHint && <p className="plans-hint"><Icon name="lock" size={15} /> {plansHint}</p>}
 
         <div className="plan-cards">
@@ -39,6 +46,17 @@ export default function PlansModal() {
               <p className="muted small">{t(p.tagline)}</p>
               <ul>{p.perks.map((k) => <li key={k}><Icon name="check" size={15} /> <span>{t(k)}</span></li>)}</ul>
               {p.id === cur && <span className="plan-cur">{t('Tu plan actual')}</span>}
+              <div className="plan-buy">
+                {p.id === 'basic' && <span className="plan-trial">{t('15 días gratis')}</span>}
+                <div className="plan-price">{p.id === 'basic' && <span className="muted small">{t('Luego')} </span>}<b>{fmtPrice(PRICES[p.id])}</b> <span className="muted small">USD / {t('mes')}</span></div>
+                {(p.rank > rank || (p.id === 'basic' && access.onTrial)) && (
+                  !paypalReady ? null
+                    : session ? <PayPalButton key={p.id} planId={p.id} userId={session.id}
+                        onDone={() => { notify(t('¡Pago confirmado! Tu plan {n} ya está activo.', { n: p.name })); closePlans() }}
+                        onError={(m) => notify(m, 'err')} />
+                      : <p className="muted small">{t('Inicia sesión para suscribirte.')}</p>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -54,8 +72,12 @@ export default function PlansModal() {
             </tbody>
           </table>
         </div>
-        <p className="muted small plans-note">{t('Para cambiar de plan escríbenos y activaremos tu cuenta.')}</p>
-        <button className="btn primary wide" onClick={closePlans}>{session ? t('Cerrar') : t('Entendido')}</button>
+        <p className="muted small plans-note">{paypalReady
+          ? t('Suscripción mensual con PayPal. Puedes cancelar cuando quieras desde tu cuenta de PayPal.')
+          : t('Para cambiar de plan escríbenos y activaremos tu cuenta.')}</p>
+        {forced
+          ? <button className="btn ghost wide" onClick={logout}>{t('Cerrar sesión')}</button>
+          : <button className="btn primary wide" onClick={closePlans}>{session ? t('Cerrar') : t('Entendido')}</button>}
       </div>
     </div>,
     document.body,

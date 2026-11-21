@@ -6,7 +6,7 @@
 //   supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...  # Gmail
 //   supabase functions deploy social --project-ref axshbrskybmydywwpdla
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { planOfUser, PLATFORMS_BY_PLAN, MAX_ACCOUNTS } from '../_shared/plan.ts'
+import { planOfUser, trialExpired, PLATFORMS_BY_PLAN, MAX_ACCOUNTS } from '../_shared/plan.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -261,6 +261,9 @@ Deno.serve(async (req) => {
     const platform = String(b.platform || '')
     // Reglas del plan (app_metadata.plan): redes permitidas y número de cuentas conectadas
     const plan = planOfUser(u.user.email, u.user.app_metadata?.plan)
+    if ((b.action === 'auth-url' || b.action === 'publish') && trialExpired(u.user)) {
+      throw new HttpError(402, 'Tu prueba gratuita de 15 días terminó. Suscríbete a un plan para seguir publicando.')
+    }
     if ((b.action === 'auth-url' || b.action === 'publish') && !PLATFORMS_BY_PLAN[plan].includes(platform)) {
       throw new HttpError(403, 'Esta red no está incluida en tu plan. Sube de plan para usarla.')
     }

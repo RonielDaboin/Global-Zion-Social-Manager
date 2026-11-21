@@ -48,6 +48,27 @@ export const PLANS = {
 }
 export const PLAN_LIST = [PLANS.basic, PLANS.pro, PLANS.pro_plus]
 
+// Precio mensual en USD que paga el cliente. Debe coincidir con el precio del plan de suscripción creado en PayPal.
+// Incluye la comisión de PayPal en Chile (5,40 % + 0,30 USD) para que a Global Zion le lleguen netos 5,99 / 13,99 / 24,99:
+//   precio = (neto + 0,30) / (1 - 0,054). Si PayPal cambia la comisión hay que recalcular y crear planes nuevos.
+export const PRICES = { basic: 6.65, pro: 15.11, pro_plus: 26.74 }
+export const fmtPrice = (n) => '$' + n.toFixed(2)
+// IDs de los planes de suscripción de PayPal (P-XXXX), públicos por diseño. Ver PAGOS_PAYPAL.md.
+export const PAYPAL = {
+  clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID || '',
+  plans: {
+    basic: import.meta.env.VITE_PAYPAL_PLAN_BASIC || '',
+    pro: import.meta.env.VITE_PAYPAL_PLAN_PRO || '',
+    pro_plus: import.meta.env.VITE_PAYPAL_PLAN_PRO_PLUS || '',
+  },
+}
+export const paypalReady = !!(PAYPAL.clientId && PAYPAL.plans.basic && PAYPAL.plans.pro && PAYPAL.plans.pro_plus)
+
+// Prueba gratuita de 15 días (se cuenta desde que se creó la cuenta; los usuarios anteriores a PAYWALL_START la cuentan desde esa fecha).
+// Mismas reglas en supabase/functions/_shared/plan.ts (trialExpired).
+export const TRIAL_DAYS = 15
+const PAYWALL_START = Date.parse('2026-11-21T00:00:00Z')
+
 // Filas de la tabla comparativa: [etiqueta, valor Básico, valor PRO, valor PRO PLUS]  (true/false = ✓/—)
 export const COMPARE = [
   ['Redes sociales', 'Instagram, Facebook, X', '+ TikTok, LinkedIn, YouTube, Correo', '+ WhatsApp y WhatsApp Business'],
@@ -87,7 +108,13 @@ export function accessOf(session) {
   const role = ROLES[session?.appRole] ? session.appRole : a.role || 'user'
   const srv = session?.appPlan === 'free' ? 'basic' : session?.appPlan // 'free' era el nombre antiguo de Básico
   const plan = PLANS[srv] ? srv : a.plan || 'basic'
-  return { role: ROLES[role], plan: PLANS[plan], limits: LIMITS[plan] }
+  // Prueba gratuita: sin suscripción de PayPal, el dueño y los administradores nunca caducan
+  const exempt = role === 'owner' || role === 'admin'
+  const paid = !!session?.appSub
+  const end = Math.max(Date.parse(session?.createdAt || '') || 0, PAYWALL_START) + TRIAL_DAYS * 86400000
+  const onTrial = !!session && !exempt && !paid
+  const trialDaysLeft = onTrial ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : null
+  return { role: ROLES[role], plan: PLANS[plan], limits: LIMITS[plan], onTrial, trialDaysLeft, expired: onTrial && Date.now() > end }
 }
 
 /** Plan más barato que incluye algo (para el aviso «Disponible en …»). `test` recibe los límites de un plan. */

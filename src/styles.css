@@ -2009,6 +2009,12 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .plan-table td svg { color: var(--green); vertical-align: middle; }
 .pl-no { color: var(--muted); opacity: .6; }
 .plans-note { text-align: center; }
+.plan-buy { display: grid; gap: 10px; margin-top: auto; padding-top: 6px; }
+.plan-trial { justify-self: start; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; background: var(--tag-green, #1f9d5522); color: var(--green); }
+.plan-price { font-size: 14px; }
+.plan-price b { font-size: 28px; line-height: 1; }
+.pp-wrap { display: grid; gap: 6px; min-width: 0; }
+.pp-box { min-height: 0; position: relative; z-index: 0; }
 .lock-tag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 7px; border-radius: 99px; font-size: 10px; font-weight: 800; letter-spacing: .04em; background: var(--tag-gold); color: var(--tag-gold-t); vertical-align: middle; }
 .btn.locked { opacity: .85; }
 .link-plans { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 99px; border: 1px solid var(--glass-line); background: var(--glass-2); font-weight: 700; font-size: 13px; }

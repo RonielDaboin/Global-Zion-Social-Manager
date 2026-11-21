@@ -19,6 +19,18 @@ export function planOfUser(email?: string | null, appPlan?: string | null): Plan
   return p === 'pro' || p === 'pro_plus' ? p : 'basic'
 }
 
+// Prueba gratuita de 15 días del plan Básico. Mismas reglas que trialOf() en src/lib/plans.js.
+const TRIAL_DAYS = 15
+const PAYWALL_START = Date.parse('2026-11-21T00:00:00Z') // usuarios anteriores a esta fecha cuentan la prueba desde aquí
+
+/** true si el usuario ya no tiene suscripción activa y su prueba gratuita terminó (el dueño y los administradores nunca caducan). */
+export function trialExpired(user: { email?: string | null; created_at?: string; app_metadata?: Record<string, unknown> }): boolean {
+  if (OWNERS.includes((user.email || '').toLowerCase()) || user.app_metadata?.role === 'admin' || user.app_metadata?.role === 'owner') return false
+  if (user.app_metadata?.paypal_subscription_id) return false
+  const start = Math.max(Date.parse(user.created_at || '') || 0, PAYWALL_START)
+  return Date.now() > start + TRIAL_DAYS * 86400000
+}
+
 function planFromJwt(req: Request): PlanId {
   try {
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')

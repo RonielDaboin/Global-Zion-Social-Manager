@@ -31,6 +31,7 @@ export const toSession =(u) => {
     googleId: g.provider_id || g.sub || null,
     appRole: u.app_metadata?.role || null,
     appPlan: u.app_metadata?.plan || null,
+    appSub: u.app_metadata?.paypal_subscription_id || null, // suscripción de PayPal activa (si no hay, el usuario está en la prueba gratuita)
     googleKeys: Object.keys(g),
     avatarMode: meta.avatar_mode === 'initial' ? 'initial' : 'photo',
     contactPref: meta.contact_pref || 'whatsapp',
