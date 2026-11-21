@@ -118,7 +118,7 @@ export default function AICredits() {
   useEffect(() => { load() }, [load])
 
   return (
-    <div className="page">
+    <div className="page cred">
       <header className="ph row between">
         <div><h1>{t('Créditos IA')}</h1><p>{t('Una estimación de lo que te queda hoy en cada proveedor gratuito.')}</p></div>
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>

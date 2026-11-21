@@ -49,7 +49,7 @@ export default function Dashboard({ go, edit }) {
           <div className="hero-act">
             <button className="btn primary auto-btn" onClick={() => setAuto(true)}>✨ {t('Crear con IA')}</button>
             <button className="btn primary" onClick={() => go('composer-new')}><Icon name="plus" size={16} /> {t('Crear publicación')}</button>
-            <button className="btn ghost" onClick={() => go('calendar')}><Icon name="cal" size={16} /> {t('Calendario')}</button>
+            <button className="btn ghost cal-btn" onClick={() => go('calendar')}><Icon name="cal" size={16} /> {t('Calendario')}</button>
           </div>
         </div>
         <div className="hero-nets" aria-hidden="true">

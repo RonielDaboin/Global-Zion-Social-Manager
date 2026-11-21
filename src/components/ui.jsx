@@ -48,14 +48,22 @@ export function ThemeToggle({ className = '' }) {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const toggle = () => {
     const d = !dark
-    document.documentElement.classList.toggle('dark', d)
+    const root = document.documentElement
+    // Transición suave de colores en toda la app mientras cambia el tema
+    root.classList.add('theming')
+    clearTimeout(window.__gzThemeT)
+    window.__gzThemeT = setTimeout(() => root.classList.remove('theming'), 450)
+    root.classList.toggle('dark', d)
     document.documentElement.style.colorScheme = d ? 'dark' : 'light'
     try { localStorage.setItem('gz-theme', d ? 'dark' : 'light') } catch { /* ignore */ }
     setDark(d)
   }
   return (
-    <button className={'theme-btn ' + className} onClick={toggle} title={t('Cambiar tema')}>
-      <Icon name={dark ? 'sun' : 'moon'} size={16} /> <span>{dark ? t('Modo claro') : t('Modo oscuro')}</span>
+    <button className={'theme-btn ' + className} role="switch" aria-checked={dark} onClick={toggle} title={t('Cambiar tema')}>
+      <span className={'tsw' + (dark ? ' dark' : '')} aria-hidden="true">
+        <Icon name="sun" size={13} /><Icon name="moon" size={13} /><i className="knob" />
+      </span>
+      <span className="tlabel">{dark ? t('Modo claro') : t('Modo oscuro')}</span>
     </button>
   )
 }

@@ -329,7 +329,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
               <p className="muted small">{t('Duración resultante')}: <b>{fmtTime(trim.end - trim.start)}</b></p>
             </section>
 
-            <section>
+            <section className="vtext-sec">
               <h4>📝 {t('Textos')}</h4>
               <p className="muted small">{t('Agrega títulos, subtítulos y más sobre el video. Arrástralos sobre la imagen para moverlos y elige en qué momento aparecen.')}</p>
               <div className="chips">
