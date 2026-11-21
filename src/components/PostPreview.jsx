@@ -62,6 +62,33 @@ function X({ p, h, vurl, when }) {
   )
 }
 
+function LinkedIn({ p, h, vurl, when }) {
+  return (
+    <div className="sim sim-li">
+      <div className="sim-head"><Av name={h} /><div><b>{h.replace('@', '')}</b><small>{t('Página')} · {when} · 🌐</small></div><span className="sim-dots">•••</span></div>
+      <div className="sim-body">{p.caption}</div>
+      <Media p={p} vurl={vurl} className="sim-media" />
+      <div className="sim-stats"><span>👍 0</span><span>0 {t('comentarios')}</span></div>
+      <div className="sim-fbacts"><span>👍 {t('Me gusta')}</span><span>💬 {t('Comentar')}</span><span>🔁 {t('Compartir')}</span><span>✉ {t('Enviar')}</span></div>
+    </div>
+  )
+}
+
+function YouTube({ p, h, vurl, when }) {
+  const [title, ...rest] = (p.caption || '').split('\n')
+  return (
+    <div className="sim sim-yt">
+      <div className="sim-ytmedia"><Media p={p} vurl={vurl} className="sim-media" /></div>
+      <div className="sim-ytinfo">
+        <h4>{title || t('(sin título)')}</h4>
+        <div className="sim-head"><Av name={h} /><div><b>{h.replace('@', '')}</b><small>0 {t('suscriptores')} · {when}</small></div><span className="sim-ytsub">{t('Suscribirse')}</span></div>
+        {rest.join('\n').trim() && <div className="sim-body">{rest.join('\n').trim()}</div>}
+        <div className="sim-ytacts"><span>👍 0</span><span>👎</span><span>↗ {t('Compartir')}</span></div>
+      </div>
+    </div>
+  )
+}
+
 function WhatsApp({ p, h, vurl, when, biz }) {
   const time = new Date(p.publishedAt || p.scheduledAt || p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
@@ -131,6 +158,8 @@ export default function PostPreview({ p, onClose, actions }) {
           {tab === 'tiktok' && <TikTok {...props} />}
           {tab === 'facebook' && <Facebook {...props} />}
           {tab === 'twitter' && <X {...props} />}
+          {tab === 'linkedin' && <LinkedIn {...props} />}
+          {tab === 'youtube' && <YouTube {...props} />}
           {tab === 'whatsapp' && <WhatsApp {...props} />}
           {tab === 'whatsapp-business' && <WhatsApp {...props} biz />}
           {tab === 'email' && <Email {...props} prov={prov} />}

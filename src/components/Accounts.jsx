@@ -10,6 +10,8 @@ const BLURB = {
   tiktok: 'Publica imágenes y videos en tu cuenta de TikTok.',
   facebook: 'Publica en tu página de Facebook.',
   twitter: 'Publica posts en tu cuenta de X (Twitter).',
+  linkedin: 'Publica posts y videos en tu perfil o página de LinkedIn.',
+  youtube: 'Sube videos y Shorts a tu canal de YouTube.',
   whatsapp: 'Envía mensajes e imágenes desde tu WhatsApp personal.',
   'whatsapp-business': 'Envía mensajes y catálogos con la API de WhatsApp Business.',
   email: 'Envía correos y newsletters con Gmail, Outlook u otro gestor de correo.',
@@ -82,7 +84,7 @@ export default function Accounts() {
         {social.ready && <p><b>{t('Estado del servidor')}:</b> {['instagram', 'facebook', 'email'].map((k) => `${PLATFORMS[k].name} ${social.configured[k] ? '✅' : '—'}`).join(' · ')}</p>}
         <p>
           {t('Sin credenciales configuradas, la app funciona en modo demo: la autorización y la publicación se simulan en tu navegador.')}{' '}
-          {t('Para publicar de verdad necesitas registrar tu app en Meta for Developers (Instagram, Facebook y WhatsApp Cloud API), TikTok for Developers y X Developer Portal, conectar tu gestor de correo (Gmail API, Microsoft Graph o SMTP) en el backend, definir las claves en .env y desplegar un pequeño backend que guarde los tokens. Los pasos están en el README.md.')}
+          {t('Para publicar de verdad necesitas registrar tu app en Meta for Developers (Instagram, Facebook y WhatsApp Cloud API), TikTok for Developers, X Developer Portal, LinkedIn Developers y Google Cloud (YouTube Data API), conectar tu gestor de correo (Gmail API, Microsoft Graph o SMTP) en el backend, definir las claves en .env y desplegar un pequeño backend que guarde los tokens. Los pasos están en el README.md.')}
         </p>
       </div>
 

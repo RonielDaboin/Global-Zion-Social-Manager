@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PLATFORMS } from '../lib/formats.js'
-import { Icon, useCineTheme, CineThemeSwitch } from './ui.jsx'
+import { Icon, PlatformLogo, useCineTheme, CineThemeSwitch } from './ui.jsx'
 import FontPicker from './FontPicker.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { TEXT_PRESETS, newTextLayer, drawTextLayers, ensureTextFonts, hasText } from '../lib/videoText.js'
-import { FX0, PRESETS, fxCss, fxSame, vignetteCss, drawVignette, fxIsDefault, processVideo, canProcessVideo, canFilterVideo } from '../lib/videoProcess.js'
+import { FRAME0, VFORMATS, vFormat, frameIsDefault, frameRect, targetSize, FX0, PRESETS, fxCss, fxSame, vignetteCss, drawVignette, fxIsDefault, processVideo, canProcessVideo, canFilterVideo } from '../lib/videoProcess.js'
 
 export const MAX_VIDEO_MB = 500
 // Límites orientativos por plataforma (segundos / MB)
@@ -14,6 +14,8 @@ const LIMITS = {
   tiktok: { sec: 600 },
   facebook: { sec: 14400 },
   twitter: { sec: 140 },
+  linkedin: { sec: 600 },
+  youtube: { sec: 900, label: 'Shorts hasta 3 min' },
   whatsapp: { mb: 16 },
   'whatsapp-business': { mb: 16 },
 }
@@ -51,6 +53,7 @@ function TextTimeline({ texts, selT, onSelect, dur, cur, onSeek, onPatch }) {
   const timeAt = (e) => { const r = track.current.getBoundingClientRect(); return Math.max(0, Math.min(dur, ((e.clientX - r.left) / r.width) * dur)) }
   const down = (e, l, kind) => {
     e.stopPropagation(); e.preventDefault()
+    document.activeElement?.blur?.() // así Ctrl+C / Ctrl+V actúan sobre el texto de la línea de tiempo y no sobre un campo
     onSelect(l.id)
     drag.current = { id: l.id, kind, t0: timeAt(e), from0: l.from, end0: l.to > 0 ? l.to : dur }
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -108,6 +111,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const [mute, setMute] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [mode, setMode] = useState('basic') // 'basic' | 'adv'
+  const [frame, setFrame] = useState(FRAME0) // formato de salida (relación de aspecto) y encuadre
   const layerTxt = useRef(null)
   const wantFocus = useRef(null) // 'all' | 'end': al hacer clic en un texto del visor, el cursor pasa al campo de texto
   const [focusTick, setFocusTick] = useState(0)
@@ -164,7 +168,8 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const trimmed = dur > 0 && (trim.start > 0.05 || trim.end < dur - 0.05)
   const filtered = !fxIsDefault(fx)
   const withText = hasText(texts)
-  const dirty = trimmed || filtered || mute || withText
+  const reframed = !frameIsDefault(frame)
+  const dirty = trimmed || filtered || mute || withText || reframed
   const canEdit = canProcessVideo()
   const busy = prog !== null
 
@@ -183,12 +188,15 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const captureCover = (at) => {
     const v = ref.current
     if (!v || !v.videoWidth) return null
-    const s = Math.min(1, 1080 / Math.max(v.videoWidth, v.videoHeight))
+    const { w: tw, h: th } = targetSize(frame, v.videoWidth, v.videoHeight)
+    const s = Math.min(1, 1080 / Math.max(tw, th))
     const c = document.createElement('canvas')
-    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s)
+    c.width = Math.round(tw * s); c.height = Math.round(th * s)
     const ctx = c.getContext('2d')
+    if (reframed && frame.fit === 'contain') { ctx.fillStyle = frame.bg; ctx.fillRect(0, 0, c.width, c.height) }
     if (canFilterVideo()) ctx.filter = fxCss(fx)
-    ctx.drawImage(v, 0, 0, c.width, c.height)
+    const R = frameRect(v.videoWidth, v.videoHeight, c.width, c.height, frame)
+    ctx.drawImage(v, R.dx, R.dy, R.dw, R.dh)
     drawVignette(ctx, c.width, c.height, fx.vignette)
     drawTextLayers(ctx, c.width, c.height, texts, at)
     return { cover: c.toDataURL('image/jpeg', 0.8), coverTime: at }
@@ -202,7 +210,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (f.size > MAX_VIDEO_MB * 1048576) return notify(t('El video supera {n} MB.', { n: MAX_VIDEO_MB }), 'err')
     origRef.current = null
     wantCover.current = true
-    setFx(FX0); setMute(false); setTexts([]); setSelT(null)
+    setFx(FX0); setMute(false); setTexts([]); setSelT(null); setFrame(FRAME0)
     setFile(f)
     setVideo({ name: f.name, size: f.size, duration: 0, width: 0, height: 0, cover: null, coverTime: 0 })
     setTime(0); setTrim({ start: 0, end: 0 })
@@ -266,12 +274,12 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     setProg(0)
     try {
       const src = origRef.current || file
-      const { blob, duration } = await processVideo(file, { start: trim.start, end: trim.end, fx, mute, texts, onProgress: setProg, ctl: ctl.current })
+      const { blob, duration } = await processVideo(file, { start: trim.start, end: trim.end, fx, mute, texts, frame, onProgress: setProg, ctl: ctl.current })
       origRef.current = src
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
       const out = new File([blob], video.name.replace(/\.[^.]+$/, '').replace(/-editado$/, '') + '-editado.' + ext, { type: blob.type })
       wantCover.current = true
-      setFx(FX0); setMute(false); setTexts([]); setSelT(null)
+      setFx(FX0); setMute(false); setTexts([]); setSelT(null); setFrame(FRAME0)
       setVideo((old) => ({ ...old, name: out.name, size: out.size, duration, pending: false, edited: true }))
       setFile(out)
       if (ext === 'webm') notify(t('Tu navegador generó WebM. Instagram y Facebook prefieren MP4: usa Chrome o Edge actualizados.'), 'err')
@@ -285,7 +293,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     if (!f) return
     origRef.current = null
     wantCover.current = true
-    setFx(FX0); setMute(false); setTexts([]); setSelT(null)
+    setFx(FX0); setMute(false); setTexts([]); setSelT(null); setFrame(FRAME0)
     setVideo((old) => ({ ...old, name: f.name, size: f.size, edited: false }))
     setFile(f)
   }
@@ -346,6 +354,36 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     setTexts((a) => [...a, l]); setSelT(l.id)
   }
   const dupText = () => { if (!tl) return; const l = { ...tl, id: newTextLayer().id, x: Math.min(0.95, tl.x + 0.04), y: Math.min(0.95, tl.y + 0.04) }; setTexts((a) => [...a, l]); setSelT(l.id) }
+  // Copiar / pegar textos: el pegado queda en el instante actual del video (mismo estilo, posición y duración)
+  const clip = useRef(null)
+  const copyText = () => {
+    if (!tl) return
+    clip.current = { ...tl }
+    notify?.(t('Texto copiado: mueve el video y pega con Ctrl+V'))
+  }
+  const pasteText = () => {
+    const c = clip.current
+    if (!c) return
+    const start = r1(Math.max(0, Math.min(cur, Math.max(0, dur - 0.3))))
+    const len = c.to > 0 ? c.to - c.from : 0 // 0 = el texto copiado duraba hasta el final
+    const end = len ? start + len : 0
+    const l = { ...c, id: newTextLayer().id, from: start, to: end && end < dur - 0.05 ? r1(end) : 0 }
+    setTexts((a) => [...a, l]); setSelT(l.id)
+  }
+  const kb = useRef(null)
+  kb.current = (e) => {
+    const tag = document.activeElement?.tagName
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || document.activeElement?.isContentEditable || busy) return
+    const mod = e.ctrlKey || e.metaKey
+    if (mod && e.key.toLowerCase() === 'c' && tl) { e.preventDefault(); copyText() }
+    else if (mod && e.key.toLowerCase() === 'v' && clip.current) { e.preventDefault(); pasteText() }
+    else if (e.key === 'Delete' && tl) { e.preventDefault(); delText() }
+  }
+  useEffect(() => {
+    const h = (e) => kb.current?.(e)
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
   const delText = () => { setTexts((a) => a.filter((l) => l.id !== selT)); setSelT(null) }
   const ovPos = (e) => {
     const c = ovRef.current, r = c.getBoundingClientRect()
@@ -372,7 +410,16 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     }
     // 2) mover un texto
     const hit = [...boxes.current].reverse().find((b) => { const q = toLocal(b, p); return q.x >= b.x && q.x <= b.x + b.w && q.y >= b.y && q.y <= b.y + b.h })
-    if (!hit) { setSelT(null); toggle(); return }
+    if (!hit) {
+      setSelT(null)
+      // Con un formato que recorta el video (Rellenar), arrastrar sobre el visor mueve el encuadre
+      if (reframed && frame.fit !== 'contain') {
+        drag.current = { mode: 'pan', sx: p.x, sy: p.y, px0: frame.px, py0: frame.py, moved: false }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        return
+      }
+      toggle(); return
+    }
     setSelT(hit.id)
     drag.current = { id: hit.id, mode: 'move', ox: p.x - hit.cx, oy: p.y - hit.cy, sx: p.x, sy: p.y, moved: false }
     guide.current = { x: false, y: false }
@@ -382,6 +429,16 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     const d = drag.current
     if (!d) return
     const p = ovPos(e)
+    if (d.mode === 'pan') {
+      const v = ref.current
+      if (!v?.videoWidth) return
+      if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > 4 * Math.max(1, p.W / 540)) d.moved = true
+      const k = Math.max(p.W / v.videoWidth, p.H / v.videoHeight)
+      const ox = v.videoWidth * k - p.W, oy = v.videoHeight * k - p.H // cuánto sobra en cada eje
+      const cl = (n) => Math.min(1, Math.max(0, n))
+      setFrame((f) => ({ ...f, px: ox > 1 ? Math.round(cl(d.px0 - (p.x - d.sx) / ox) * 100) / 100 : f.px, py: oy > 1 ? Math.round(cl(d.py0 - (p.y - d.sy) / oy) * 100) / 100 : f.py }))
+      return
+    }
     const b = boxes.current.find((x) => x.id === d.id)
     if (d.mode === 'rot' && b) {
       let deg = (Math.atan2(p.y - b.cy, p.x - b.cx) * 180) / Math.PI + 90
@@ -408,6 +465,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
   const ovUp = () => {
     const d = drag.current
     drag.current = null; guide.current = null; drawOverlay()
+    if (d && d.mode === 'pan') { if (!d.moved && !busy) toggle(); return }
     // Clic simple sobre un texto (sin arrastrar): se puede escribir de inmediato
     if (d && d.mode === 'move' && !d.moved && !busy) {
       const l = texts.find((x) => x.id === d.id)
@@ -419,16 +477,16 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     <div className={'editor' + (cine ? ' cine' : '') + (cine && cineLight ? ' cine-light' : '')}>
       {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
       <div className="stage vstage">
-        <div className="canvas-wrap video-wrap" style={{ aspectRatio: video?.width ? `${video.width}/${video.height}` : '9/16' }}>
+        <div className="canvas-wrap video-wrap" style={{ aspectRatio: reframed ? `${vFormat(frame.format).w}/${vFormat(frame.format).h}` : video?.width ? `${video.width}/${video.height}` : '9/16', background: reframed && frame.fit === 'contain' ? frame.bg : undefined }}>
           {url
-            ? <video ref={ref} src={url} playsInline preload="metadata" style={{ filter: fxCss(fx) }} onClick={toggle}
+            ? <video ref={ref} src={url} playsInline preload="metadata" style={{ filter: fxCss(fx), ...(reframed ? { objectFit: frame.fit === 'contain' ? 'contain' : 'cover', objectPosition: `${frame.px * 100}% ${frame.py * 100}%`, background: 'transparent' } : null) }} onClick={toggle}
                 onLoadedMetadata={onMeta} onSeeked={onSeeked} onTimeUpdate={onTime} onEnded={onEnded} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
             : <label className="video-empty" tabIndex={0} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), e.currentTarget.querySelector('input').click())}>
                 <Icon name="up" size={28} /><span>{t('Aún no has subido ningún video')}</span><small>{t('Toca aquí para subir un video')}</small>
                 <input type="file" accept="video/*" hidden onChange={onPick} />
               </label>}
           {url && fx.vignette > 0 && <div className="vvig" style={{ background: vignetteCss(fx.vignette) }} />}
-          {url && <canvas ref={ovRef} className="vtext-ov" aria-label={t('Textos sobre el video')} onPointerDown={ovDown} onPointerMove={ovMove} onPointerUp={ovUp} onPointerCancel={ovUp} />}
+          {url && <canvas ref={ovRef} className={'vtext-ov' + (reframed && frame.fit !== 'contain' ? ' pannable' : '')} onDoubleClick={() => reframed && frame.fit !== 'contain' && setFrame((f) => ({ ...f, px: 0.5, py: 0.5 }))} aria-label={t('Textos sobre el video')} onPointerDown={ovDown} onPointerMove={ovMove} onPointerUp={ovUp} onPointerCancel={ovUp} />}
           {busy && (
             <div className="vproc">
               <b>{t('Procesando…')} {Math.round(prog * 100)}%</b>
@@ -472,6 +530,46 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
 
         {dur > 0 && (
           <>
+            <section className="vfmt-sec">
+              <h4>📐 {t('Formato')}</h4>
+              <div className="vf-grid" role="group" aria-label={t('Formato')}>
+                {VFORMATS.map((f) => (
+                  <button key={f.id} className={'vf-card' + (frame.format === f.id ? ' on' : '')} disabled={busy} aria-pressed={frame.format === f.id} onClick={() => setFrame({ ...frame, format: f.id })}>
+                    <span className="vf-top">
+                      <i className="vf-shape" style={f.w ? { aspectRatio: `${f.w}/${f.h}` } : undefined} />
+                      <b>{f.id === 'orig' ? t(f.label) : f.label}</b>
+                      {f.w ? <small>{f.w}×{f.h}</small> : <small>{t('Sin cambios')}</small>}
+                    </span>
+                    {f.nets.length > 0 && (
+                      <span className="vf-nets">
+                        {f.nets.map(([id, note]) => (
+                          <span key={id} className="vf-net"><PlatformLogo id={id} size={16} />{PLATFORMS[id].name.replace(' (Twitter)', '')}{note ? <em> · {t(note)}</em> : null}</span>
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="muted small">{reframed ? `${t(vFormat(frame.format).sub)} · ${vFormat(frame.format).w}×${vFormat(frame.format).h}px` : t(vFormat(frame.format).sub)}</p>
+              {reframed && frame.fit !== 'contain' && <p className="pan-hint">✋ {t('Arrastra el video en el visor para elegir qué parte se ve. Doble clic para centrar.')}</p>}
+              {reframed && <p className="muted small">{t('Se aplica al pulsar “Aplicar”: el video se recorta o se ajusta a esta forma.')}</p>}
+              <div className={'collapse' + (mode === 'adv' && reframed ? ' open' : '')} aria-hidden={!(mode === 'adv' && reframed)}><div className="collapse-in">
+                <div className="vfmt-adv">
+                  <div className="seg" role="group">
+                    <button className={frame.fit !== 'contain' ? 'on' : ''} disabled={busy} onClick={() => setFrame({ ...frame, fit: 'cover' })}>{t('Rellenar')}</button>
+                    <button className={frame.fit === 'contain' ? 'on' : ''} disabled={busy} onClick={() => setFrame({ ...frame, fit: 'contain' })}>{t('Ajustar')}</button>
+                  </div>
+                  <p className="muted small">{frame.fit === 'contain' ? t('Se ve todo el video y los lados se rellenan con un color.') : t('El video llena todo el cuadro y se recortan los bordes.')}</p>
+                  {frame.fit === 'contain'
+                    ? <label className="inl sw"><span className="lbl">{t('Color de las barras')}</span><input type="color" value={frame.bg} disabled={busy} onChange={(e) => setFrame({ ...frame, bg: e.target.value })} /></label>
+                    : <>
+                        <label className="inl"><span className="lbl">{t('Encuadre horizontal')} <b>{Math.round(frame.px * 100)}%</b></span><input type="range" min="0" max="1" step="0.01" value={frame.px} disabled={busy} onChange={(e) => setFrame({ ...frame, px: +e.target.value })} /></label>
+                        <label className="inl"><span className="lbl">{t('Encuadre vertical')} <b>{Math.round(frame.py * 100)}%</b></span><input type="range" min="0" max="1" step="0.01" value={frame.py} disabled={busy} onChange={(e) => setFrame({ ...frame, py: +e.target.value })} /></label>
+                      </>}
+                </div>
+              </div></div>
+            </section>
+
             <section>
               <h4>✂️ {t('Recortar')}</h4>
               {!canEdit && <p className="warn">⚠️ {t('Este navegador no puede editar videos. Prueba con Chrome o Edge.')}</p>}
@@ -536,7 +634,7 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
                   <div className="tm-block">
                     <h5>⏱ {t('Cuándo aparece')}</h5>
                     <TextTimeline texts={texts} selT={selT} onSelect={setSelT} dur={dur} cur={cur} onSeek={scrub} onPatch={(id, p) => setTexts((arr) => arr.map((x) => (x.id === id ? { ...x, ...p } : x)))} />
-                    <p className="muted small">{t('Arrastra la barra para moverla y sus bordes para ajustar cuándo aparece y desaparece.')}</p>
+                    <p className="muted small">{t('Arrastra la barra para moverla y sus bordes para ajustar cuándo aparece y desaparece.')} {t('Ctrl+C copia el texto seleccionado y Ctrl+V lo pega donde está el video.')}</p>
                     <div className="row">
                       <label className="inl grow"><span className="lbl">{t('Aparece en')} <b>{tl.from.toFixed(1)} s</b></span>
                         <input type="number" min="0" max={Math.max(0, (tl.to > 0 ? tl.to : dur) - 0.3)} step="0.1" value={tl.from} onChange={(e) => { const f = Math.max(0, Math.min(+e.target.value || 0, (tl.to > 0 ? tl.to : dur) - 0.3)); patchT({ from: r1(f) }); scrub(f) }} />
@@ -553,6 +651,8 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
                     <div className="row">
                       <button className="btn ghost sm" onClick={() => patchT({ from: r1(cur), to: tl.to > 0 && tl.to < cur + 0.3 ? 0 : tl.to })}>{t('Aparece aquí')}</button>
                       <button className="btn ghost sm" onClick={() => patchT({ to: cur > tl.from + 0.3 ? r1(cur) : tl.to })}>{t('Desaparece aquí')}</button>
+                      <button className="btn ghost sm" onClick={copyText} title="Ctrl+C">📋 {t('Copiar')}</button>
+                      <button className="btn ghost sm" disabled={!clip.current} onClick={pasteText} title="Ctrl+V">{t('Pegar aquí')}</button>
                       <button className="btn ghost sm" onClick={() => scrub(tl.from)} title={t('Ir al inicio del texto')}>⏮</button>
                       <button className="btn ghost sm" onClick={() => scrub(Math.max(0, (tl.to > 0 ? tl.to : dur) - 0.05))} title={t('Ir al final del texto')}>⏭</button>
                     </div>

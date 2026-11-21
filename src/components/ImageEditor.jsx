@@ -442,7 +442,7 @@ export default function ImageEditor({ design, setDesign }) {
           <button className={mode === 'adv' ? 'on' : ''} onClick={() => setMode('adv')}>{t('Avanzado')}</button>
         </div>
         <section>
-          <h4>{t('Formato')}</h4>
+          <h4>📐 {t('Formato')}</h4>
           <div className="chips" role="group" aria-label={t('Formato')}>
             {FORMATS.map((f) => (
               <button key={f.id} aria-pressed={fmts.includes(f.id)} className={'chip' + (fmts.includes(f.id) ? ' on' : '') + (f.id === design.format ? ' cur' : '')} onClick={() => toggleFormat(f.id)}>{fmts.includes(f.id) ? '✓ ' : ''}{t(f.label)}</button>
@@ -452,12 +452,12 @@ export default function ImageEditor({ design, setDesign }) {
         </section>
 
         <section>
-          <h4>{t('Plantillas')}</h4>
+          <h4>🧩 {t('Plantillas')}</h4>
           <TemplateChips onPick={applyTemplate} />
         </section>
 
         <section>
-          <h4>{t('Fondo')}</h4>
+          <h4>🖼️ {t('Fondo')}</h4>
           <div className="seg full">
             {[['gradient', 'Degradado'], ['solid', 'Color'], ['image', 'Imagen']].map(([v, l]) => (
               <button key={v} className={design.bg.type === v ? 'on' : ''} onClick={() => patchBg({ type: v })}>{t(l)}</button>
@@ -536,7 +536,7 @@ export default function ImageEditor({ design, setDesign }) {
                     <label className="inl bg-angle"><span>{t('Inclinación')} <b>{design.bg.angle}°</b></span><input type="range" min="0" max="360" value={design.bg.angle} onChange={(e) => patchBg({ angle: +e.target.value })} /></label>
                   )}
                 </div>
-                <h4 style={{ margin: '10px 0 4px' }}>{t('Ajustes de imagen')}
+                <h4 style={{ margin: '10px 0 4px' }}>🎚️ {t('Ajustes de imagen')}
                   {dirty && <button className="btn ghost sm" style={{ marginLeft: 8 }} onClick={() => patchBg({ fx: { ...FX_DEFAULT } })}>{t('Restablecer')}</button>}
                 </h4>
                 {sliders.map(([key, label, min, max, step]) => (
@@ -555,7 +555,7 @@ export default function ImageEditor({ design, setDesign }) {
         </section>
 
         <section>
-          <h4>{t('Imagen con IA')}</h4>
+          <h4>✨ {t('Imagen con IA')}</h4>
           <textarea rows={2} value={aiPrompt} maxLength={1000} onChange={(e) => setAiPrompt(e.target.value)}
             placeholder={t('Describe la imagen que quieres generar…')} />
           <div className="row">
@@ -568,13 +568,13 @@ export default function ImageEditor({ design, setDesign }) {
 
         <div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
           <section>
-            <h4>{t('Stickers')}</h4>
+            <h4>😀 {t('Stickers')}</h4>
             <Stickers onAdd={addSticker} />
           </section>
         </div></div>
 
         <section>
-          <h4>{t('Textos')} <button className="btn ghost sm" onClick={addLayer}><Icon name="plus" size={14} /> {t('Añadir')}</button></h4>
+          <h4>📝 {t('Textos')} <button className="btn ghost sm" onClick={addLayer}><Icon name="plus" size={14} /> {t('Añadir')}</button></h4>
           <div className="ai-texts">
             <input type="text" value={txtTopic} maxLength={300} onChange={(e) => setTxtTopic(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && aiTexts()} placeholder={t('Tema o idea (opcional)')} />

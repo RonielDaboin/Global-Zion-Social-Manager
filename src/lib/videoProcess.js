@@ -140,7 +140,41 @@ const once = (el, ev) => new Promise((res, rej) => {
  * @param {{start:number,end:number,fx:object,mute:boolean,onProgress?:(p:number)=>void,ctl:{cancel:boolean}}} o
  * @returns {Promise<{blob:Blob,duration:number}>}
  */
-async function processRealtime(file, { start, end, fx, mute, texts, onProgress, ctl }) {
+/** Formatos de salida del video (relación de aspecto). `orig` conserva el video tal cual. */
+export const VFORMATS = [
+  { id: 'orig', label: 'Original', sub: 'Sin cambiar la forma del video', nets: [] },
+  { id: 'sq', label: '1:1', sub: 'Post cuadrado', w: 1080, h: 1080, nets: [['instagram', 'Post'], ['facebook'], ['linkedin']] },
+  { id: 'port', label: '4:5', sub: 'Post vertical', w: 1080, h: 1350, nets: [['instagram', 'Post'], ['facebook']] },
+  { id: 'vert', label: '9:16', sub: 'Reel · TikTok · Shorts · Story', w: 1080, h: 1920, nets: [['instagram', 'Reels y Stories'], ['tiktok'], ['youtube', 'Shorts'], ['facebook', 'Reels']] },
+  { id: 'wide', label: '16:9', sub: 'YouTube · X · LinkedIn', w: 1920, h: 1080, nets: [['youtube'], ['twitter'], ['linkedin'], ['facebook']] },
+]
+export const vFormat = (id) => VFORMATS.find((f) => f.id === id) || VFORMATS[0]
+/** fit: 'cover' llena el cuadro recortando (px/py = encuadre 0..1) · 'contain' muestra todo con barras del color `bg`. */
+export const FRAME0 = { format: 'orig', fit: 'cover', px: 0.5, py: 0.5, bg: '#000000' }
+export const frameIsDefault = (fr) => !fr || fr.format === 'orig'
+/** Tamaño final del video para un fotograma de origen sw×sh. */
+export function targetSize(fr, sw, sh) {
+  const f = vFormat(fr?.format)
+  if (f.id === 'orig') {
+    const k = Math.min(1, 1080 / Math.max(sw, sh))
+    return { w: Math.max(2, Math.round((sw * k) / 2) * 2), h: Math.max(2, Math.round((sh * k) / 2) * 2) }
+  }
+  return { w: f.w, h: f.h }
+}
+/** Dónde se dibuja el origen dentro del cuadro final. */
+export function frameRect(sw, sh, w, h, fr) {
+  if (frameIsDefault(fr)) return { dx: 0, dy: 0, dw: w, dh: h }
+  const cover = fr.fit !== 'contain'
+  const k = cover ? Math.max(w / sw, h / sh) : Math.min(w / sw, h / sh)
+  const dw = sw * k, dh = sh * k
+  return { dx: (w - dw) * (cover ? fr.px : 0.5), dy: (h - dh) * (cover ? fr.py : 0.5), dw, dh }
+}
+const fillBars = (ctx, w, h, fr) => {
+  if (frameIsDefault(fr) || fr.fit !== 'contain') return
+  ctx.save(); ctx.filter = 'none'; ctx.fillStyle = fr.bg || '#000'; ctx.fillRect(0, 0, w, h); ctx.restore()
+}
+
+async function processRealtime(file, { start, end, fx, mute, texts, onProgress, ctl, frame = FRAME0 }) {
   const mime = pickMime()
   if (!mime) throw new Error(t('Este navegador no puede editar videos. Prueba con Chrome o Edge.'))
   const url = URL.createObjectURL(file)
@@ -151,9 +185,9 @@ async function processRealtime(file, { start, end, fx, mute, texts, onProgress, 
   let ac, stream, raf
   try {
     await once(v, 'loadedmetadata')
-    const k = Math.min(1, 1080 / Math.max(v.videoWidth, v.videoHeight))
-    const w = Math.max(2, Math.round((v.videoWidth * k) / 2) * 2)
-    const h = Math.max(2, Math.round((v.videoHeight * k) / 2) * 2)
+    const { w, h } = targetSize(frame, v.videoWidth, v.videoHeight)
+    const R = frameRect(v.videoWidth, v.videoHeight, w, h, frame)
+    const paint = () => { fillBars(ctx, w, h, frame); ctx.drawImage(v, R.dx, R.dy, R.dw, R.dh) }
     const canvas = document.createElement('canvas')
     canvas.width = w; canvas.height = h
     const ctx = canvas.getContext('2d')
@@ -172,7 +206,7 @@ async function processRealtime(file, { start, end, fx, mute, texts, onProgress, 
 
     v.currentTime = start
     await once(v, 'seeked')
-    ctx.drawImage(v, 0, 0, w, h)
+    paint()
     drawVignette(ctx, w, h, fx.vignette)
     drawTextLayers(ctx, w, h, texts, start) // primer fotograma antes de grabar: evita parpadeo negro
 
@@ -189,7 +223,7 @@ async function processRealtime(file, { start, end, fx, mute, texts, onProgress, 
       if (rec.state !== 'inactive') rec.stop()
     }
     const frame = () => {
-      ctx.drawImage(v, 0, 0, w, h)
+      paint()
       drawVignette(ctx, w, h, fx.vignette)
       drawTextLayers(ctx, w, h, texts, v.currentTime)
       const cur = v.currentTime
@@ -216,20 +250,19 @@ async function processRealtime(file, { start, end, fx, mute, texts, onProgress, 
   }
 }
 
-async function processWebCodecs(file, { start, end, fx, mute, texts, onProgress, ctl }) {
+async function processWebCodecs(file, { start, end, fx, mute, texts, onProgress, ctl, frame = FRAME0 }) {
   await ensureTextFonts(texts)
   const mb = await import('mediabunny')
   const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS })
   const output = new mb.Output({ format: new mb.Mp4OutputFormat(), target: new mb.BufferTarget() })
   const filter = fxCss(fx)
-  const useFx = filter !== 'none' || fx.vignette > 0 || hasText(texts)
+  const useFx = filter !== 'none' || fx.vignette > 0 || hasText(texts) || !frameIsDefault(frame)
   const conv = await mb.Conversion.init({
     input, output,
     trim: { start, end },
     video: async (track) => {
-      const k = Math.min(1, 1080 / Math.max(track.displayWidth, track.displayHeight))
-      const w = Math.max(2, Math.round((track.displayWidth * k) / 2) * 2)
-      const h = Math.max(2, Math.round((track.displayHeight * k) / 2) * 2)
+      const { w, h } = targetSize(frame, track.displayWidth, track.displayHeight)
+      const R = frameRect(track.displayWidth, track.displayHeight, w, h, frame)
       const o = { width: w, height: h, fit: 'fill', codec: 'avc', bitrate: 8e6 }
       if (useFx) {
         const cv = document.createElement('canvas')
@@ -240,7 +273,7 @@ async function processWebCodecs(file, { start, end, fx, mute, texts, onProgress,
         let shift = null
         o.process = (sample) => {
           if (shift === null) shift = start > 0.05 && sample.timestamp >= start - 0.05 ? 0 : start
-          sample.draw(ctx, 0, 0, w, h); drawVignette(ctx, w, h, fx.vignette)
+          fillBars(ctx, w, h, frame); sample.draw(ctx, R.dx, R.dy, R.dw, R.dh); drawVignette(ctx, w, h, fx.vignette)
           drawTextLayers(ctx, w, h, texts, sample.timestamp + shift)
           return cv
         }

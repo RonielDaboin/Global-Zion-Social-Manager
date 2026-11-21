@@ -118,6 +118,7 @@ export default function Composer({ onDone, onDiscard }) {
     if (needPlatforms && hasEmail && !subject.trim()) { notify(t('El correo necesita un asunto'), 'err'); return false }
     if (needPlatforms && needsTo && !recipients.trim()) { notify(t('Indica los destinatarios'), 'err'); return false }
     if (needPlatforms && !platforms.length) { notify(t('Selecciona al menos una red social'), 'err'); return false }
+    if (needPlatforms && !isVideo && platforms.includes('youtube')) { notify(t('YouTube solo admite videos: cambia a Video o quita YouTube.'), 'err'); return false }
     return true
   }
 
@@ -231,6 +232,7 @@ export default function Composer({ onDone, onDiscard }) {
             <label className="inl">{t('Destinatarios (correos o números, separados por coma)')}<input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="cliente@correo.com, +56 9 1234 5678" /></label>
           </div>
         )}
+        {!isVideo && platforms.includes('youtube') && <p className="warn">⚠️ {t('YouTube solo admite videos: cambia a Video o quita YouTube.')}</p>}
         {isVideo && videoWarnings(video, platforms).map((w, i) => <p key={i} className="warn">⚠️ {w}</p>)}
         {!isVideo && formatMismatch.length > 0 && <p className="warn">⚠️ {t('El formato “{f}” no está pensado para {p}. Considera cambiar el formato.', { f: t(fmt.label), p: formatMismatch.map((m) => PLATFORMS[m].name).join(', ') })}</p>}
         {!isVideo && fmts.length > 1 && platforms.includes('instagram') && igFeedCount > 1 && <p className="warn">⚠️ {t('Instagram publicará un solo post (“{f}”) y, si lo marcaste, la story.', { f: t(getFormat(fmts.find((f) => f !== 'ig-story')).label) })}</p>}

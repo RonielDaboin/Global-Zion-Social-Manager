@@ -30,6 +30,8 @@ export const PLATFORMS = {
   tiktok: { id: 'tiktok', name: 'TikTok', color: '#25f4ee', limit: 2200, maxTags: 20, kind: 'user', ico: 'TT' },
   facebook: { id: 'facebook', name: 'Facebook', color: '#1877f2', limit: 63206, maxTags: 30, kind: 'user', ico: 'f' },
   twitter: { id: 'twitter', name: 'X (Twitter)', color: '#1d9bf0', limit: 280, maxTags: 10, kind: 'user', ico: 'X' },
+  linkedin: { id: 'linkedin', name: 'LinkedIn', color: '#0a66c2', limit: 3000, maxTags: 30, kind: 'user', ico: 'in' },
+  youtube: { id: 'youtube', name: 'YouTube', color: '#ff0000', limit: 5000, maxTags: 15, kind: 'user', ico: 'YT' },
   whatsapp: { id: 'whatsapp', name: 'WhatsApp', color: '#25d366', limit: 4096, maxTags: 99, kind: 'phone', ico: 'WA' },
   'whatsapp-business': { id: 'whatsapp-business', name: 'WhatsApp Business', color: '#128c7e', limit: 4096, maxTags: 99, kind: 'phone', ico: 'WB' },
   email: { id: 'email', name: 'Correo', color: '#ea4335', limit: 100000, maxTags: 99, kind: 'email', ico: '@' },

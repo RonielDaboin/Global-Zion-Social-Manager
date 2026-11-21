@@ -7,18 +7,21 @@ import ttSvg from 'simple-icons/icons/tiktok.svg?raw'
 import fbSvg from 'simple-icons/icons/facebook.svg?raw'
 import xSvg from 'simple-icons/icons/x.svg?raw'
 import waSvg from 'simple-icons/icons/whatsapp.svg?raw'
+import ytSvg from 'simple-icons/icons/youtube.svg?raw'
 
 const pathOf = (svg) => svg.match(/<path d="([^"]+)"/)?.[1] || ''
 const LOGO = {
   instagram: pathOf(igSvg), tiktok: pathOf(ttSvg), facebook: pathOf(fbSvg), twitter: pathOf(xSvg),
   whatsapp: pathOf(waSvg), 'whatsapp-business': pathOf(waSvg),
+  youtube: pathOf(ytSvg),
+  linkedin: 'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452z',
   email: 'M2 5h20v14H2zM2 6l10 7.5L22 6', // sobre genérico (el correo no es una marca única)
 }
 // Fondo del logo por red
 const LOGO_BG = {
   instagram: 'linear-gradient(45deg,#feda75,#fa7e1e 25%,#d62976 50%,#962fbf 75%,#4f5bd5)',
   tiktok: '#010101', facebook: '#1877f2', twitter: '#000000',
-  whatsapp: '#25d366', 'whatsapp-business': '#128c7e', email: '#ea4335',
+  whatsapp: '#25d366', 'whatsapp-business': '#128c7e', email: '#ea4335', linkedin: '#0a66c2', youtube: '#ff0000',
 }
 
 export function PlatformLogo({ id, size = 22 }) {
