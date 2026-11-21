@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { shrinkImage } from './social.js'
+import { logAI } from './aiUsage.js'
 
 // Revisión automática de la calidad de una imagen (por ejemplo, las generadas con IA) antes de usarla de fondo.
 // Mide nitidez (varianza del laplaciano), contraste, brillo y resolución. Si no pasa, el generador arma el fondo con las herramientas de la app.
@@ -62,6 +63,7 @@ export async function judgeImage(dataUrl, context = '') {
   for (let i = 0; i < 3; i++) {
     try {
       const { data, error } = await supabase.functions.invoke('judge-image', { body: { image: small, context } })
+      if (!error && typeof data?.score === 'number') logAI('gemini', 'Revisión de imágenes')
       if (!error && typeof data?.score === 'number') return { ok: !!data.usable, score: data.score, issues: data.issues || [] }
     } catch { /* reintenta */ }
     if (i < 2) await new Promise((r) => setTimeout(r, 7000))

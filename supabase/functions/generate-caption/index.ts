@@ -15,9 +15,10 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 
-const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash'
+// Cupo gratuito diario por modelo (AI Studio): los Flash Lite dan 500 peticiones/día; los Flash normales solo 20.
+const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
 // Modelos que el cliente puede pedir (lista cerrada, para poder comparar velocidad y calidad)
-const ALLOWED = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite']
+const ALLOWED = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash']
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -44,7 +45,8 @@ Deno.serve(async (req) => {
   const networks = Array.isArray(b.networks) ? (b.networks as string[]).slice(0, 8).join(', ') : ''
   const maxLen = Math.max(50, Math.min(Number(b.maxLen) || 2200, 4000))
   const maxTags = Math.max(0, Math.min(Number(b.maxTags) || 10, 15))
-  const mediaType = b.mediaType === 'video' ? 'video (se te da la portada)' : 'foto o diseño'
+  const frames = (Array.isArray(b.frames) ? b.frames : []).filter((f): f is string => typeof f === 'string').slice(0, 8)
+  const mediaType = b.mediaType === 'video' ? (frames.length ? 'video (se te dan fotogramas en orden cronológico)' : 'video (se te da la portada)') : 'foto o diseño'
   const image = typeof b.image === 'string' ? b.image : ''
 
   const instructions = [
@@ -52,6 +54,7 @@ Deno.serve(async (req) => {
     `Escribe el texto (caption) de una publicación en ${lang}.`,
     `Tono: ${tone}. Tipo de contenido: ${mediaType}. Redes: ${networks || 'redes sociales'}.`,
     topic ? `Tema indicado por el usuario: "${topic}".` : `El usuario no indicó tema: básate en lo que muestra la imagen.`,
+    frames.length ? `Se adjuntan ${frames.length} fotogramas del video en orden cronológico: deduce de qué trata y qué ocurre, y conecta el texto con eso; no inventes datos, nombres ni sonido que no puedas ver.` : '',
     image ? `Se adjunta la imagen de la publicación: descríbela con naturalidad y conecta el texto con lo que se ve; no inventes datos que no aparezcan.` : '',
     `Reglas: máximo ${Math.max(40, maxLen - 30)} caracteres en total (incluyendo hashtags y espacios; no te pases). Empieza con un gancho que llame la atención.`,
     `Usa emojis con moderación, saltos de línea para facilitar la lectura y cierra con una llamada a la acción.`,
@@ -62,9 +65,13 @@ Deno.serve(async (req) => {
   const parts: unknown[] = [{ text: instructions }]
   const m = image.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/)
   if (m && m[2].length < 4_000_000) parts.push({ inline_data: { mime_type: m[1], data: m[2] } })
+  for (const f of frames) {
+    const fm = f.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/)
+    if (fm && fm[2].length < 1_500_000) parts.push({ inline_data: { mime_type: fm[1], data: fm[2] } })
+  }
 
   const model = ALLOWED.includes(String(b.model)) ? String(b.model) : MODEL
-  const call = (thinking: boolean) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const call = (thinking: boolean, model: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
@@ -82,8 +89,15 @@ Deno.serve(async (req) => {
       },
     }),
   })
-  let res = await call(true)
-  if (res.status === 400) res = await call(false) // por si el modelo no admite ese ajuste
+  // La cuota gratuita es por modelo: si uno está agotado (429) o saturado (503), prueba los demás antes de rendirse.
+  const order = [model, ...ALLOWED.filter((x) => x !== model)]
+  let res!: Response
+  for (const m of order) {
+    res = await call(true, m)
+    if (res.status === 400) res = await call(false, m) // por si el modelo no admite ese ajuste
+    if (res.status !== 429 && res.status !== 503) break
+    console.warn('Gemini', res.status, 'con', m, '→ probando otro modelo')
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')

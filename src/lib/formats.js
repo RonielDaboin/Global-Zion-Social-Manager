@@ -14,6 +14,16 @@ export const FORMATS = [
 
 export const getFormat = (id) => FORMATS.find((f) => f.id === id) || FORMATS[0]
 
+/** Formatos elegidos en un diseño (`format` es el que se está viendo/editando). */
+export const designFormats = (d) => (d?.formats?.length ? d.formats : [d?.format || FORMATS[0].id])
+
+/** Qué formatos recibe cada red: Instagram = 1 post + 1 story; las demás, un solo archivo (sin stories). */
+export function formatsFor(platform, formats) {
+  const feed = formats.find((f) => f !== 'ig-story')
+  if (platform === 'instagram') return [...(feed ? [feed] : []), ...(formats.includes('ig-story') ? ['ig-story'] : [])]
+  return [feed || formats[0]]
+}
+
 // kind: 'user' (@usuario), 'phone' (número con código de país), 'email' (proveedor + dirección)
 export const PLATFORMS = {
   instagram: { id: 'instagram', name: 'Instagram', color: '#e1306c', limit: 2200, maxTags: 30, kind: 'user', ico: 'IG' },

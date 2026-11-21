@@ -14,7 +14,9 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 
-const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash'
+// Cupo gratuito diario por modelo (AI Studio): los Flash Lite dan 500 peticiones/día; los Flash normales solo 20.
+const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
+const MODELS = [MODEL, ...['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'].filter((x) => x !== MODEL)]
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -50,7 +52,7 @@ Deno.serve(async (req) => {
     `Sin hashtags, sin comillas alrededor, sin explicaciones. Usa saltos de línea solo si el texto actual ya los tiene. Si un espacio actual parece un contacto (web, correo, teléfono, @usuario), conserva ese dato tal cual.`,
   ].join('\n')
 
-  const call = (thinking: boolean) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+  const call = (thinking: boolean, model: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
@@ -67,8 +69,14 @@ Deno.serve(async (req) => {
       },
     }),
   })
-  let res = await call(true)
-  if (res.status === 400) res = await call(false)
+  // La cuota gratuita es por modelo: si uno está agotado (429) o saturado (503), prueba el siguiente.
+  let res!: Response
+  for (const m of MODELS) {
+    res = await call(true, m)
+    if (res.status === 400) res = await call(false, m)
+    if (res.status !== 429 && res.status !== 503) break
+    console.warn('Gemini', res.status, 'con', m, '→ probando otro modelo')
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')

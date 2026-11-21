@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
-import { PLATFORMS, accountLabel, blankDesign, getFormat, uid } from '../lib/formats.js'
+import { PLATFORMS, accountLabel, blankDesign, designFormats, getFormat, uid } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
 import { generateCaption, generateCaptionAI, shrinkImage, suggestHashtags, TONE_LIST } from '../lib/social.js'
 import { t, useLang } from '../lib/i18n.jsx'
@@ -8,6 +8,7 @@ import ImageEditor from './ImageEditor.jsx'
 import AutoPost from './AutoPost.jsx'
 import EmojiButton from './EmojiPicker.jsx'
 import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
+import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
 import { Icon, PlatformBadge } from './ui.jsx'
 
@@ -95,7 +96,9 @@ export default function Composer({ onDone, onDiscard }) {
   const maxLen = Math.min(...(platforms.length ? platforms : ['instagram']).map((p) => PLATFORMS[p].limit))
   const tags = (caption.match(/#[\p{L}\p{N}_]+/gu) || []).length
   const tagLimit = Math.min(...(platforms.length ? platforms : ['instagram']).map((p) => PLATFORMS[p].maxTags))
-  const formatMismatch = platforms.filter((p) => !fmt.platforms.includes(p) && !(fmt.w === 1080 && fmt.h === 1920))
+  const fmts = designFormats(design)
+  const formatMismatch = platforms.filter((p) => !fmts.some((id) => { const f = getFormat(id); return f.platforms.includes(p) || (f.w === 1080 && f.h === 1920) }))
+  const igFeedCount = fmts.filter((f) => f !== 'ig-story').length
 
   const hasEmail = platforms.includes('email')
   const needsTo = hasEmail || platforms.some((p) => PLATFORMS[p].kind === 'phone')
@@ -110,6 +113,7 @@ export default function Composer({ onDone, onDiscard }) {
 
   const validate = (needPlatforms) => {
     if (isVideo && !videoFile) { notify(t('Sube un video para publicar.'), 'err'); return false }
+    if (isVideo && video?.pending) { notify(t('Tienes cambios de video sin aplicar: pulsa “Aplicar” en el editor.'), 'err'); return false }
     if (caption.length > maxLen) { notify(t('El texto supera el límite de {n} caracteres', { n: maxLen }), 'err'); return false }
     if (needPlatforms && hasEmail && !subject.trim()) { notify(t('El correo necesita un asunto'), 'err'); return false }
     if (needPlatforms && needsTo && !recipients.trim()) { notify(t('Indica los destinatarios'), 'err'); return false }
@@ -147,13 +151,18 @@ export default function Composer({ onDone, onDiscard }) {
     if (genBusy) return
     setGenBusy(true)
     try {
-      let image = null
+      let image = null, frames = null
       if (useImage) {
-        const src = isVideo ? video?.cover : await renderToDataURL(design, 'image/jpeg', 0.8, 768)
-        image = src ? await shrinkImage(src) : null
+        if (isVideo) {
+          frames = videoFile ? await extractFrames(videoFile) : []
+          if (!frames.length && video?.cover) image = await shrinkImage(video.cover) // sin fotogramas: al menos la portada
+        } else {
+          const src = await renderToDataURL(design, 'image/jpeg', 0.8, 768)
+          image = src ? await shrinkImage(src) : null
+        }
       }
       const networks = platforms.map((p) => PLATFORMS[p].name)
-      setCaption(await generateCaptionAI({ topic, tone, networks, maxLen, maxTags: tagLimit, mediaType, image }))
+      setCaption(await generateCaptionAI({ topic, tone, networks, maxLen, maxTags: tagLimit, mediaType, image, frames }))
     } catch (e) {
       setCaption(generateCaption(topic, tone))
       notify(t('No se pudo usar la IA ({e}). Se usó una plantilla.', { e: e.message }), 'err')
@@ -195,7 +204,7 @@ export default function Composer({ onDone, onDiscard }) {
           <button className="btn ghost" disabled={genBusy} onClick={gen}><Icon name="magic" size={16} /> {genBusy ? t('Generando…') : t('Generar texto con IA')}</button>
           <button className="btn ghost" onClick={addTags}>{t('# Hashtags')}</button>
         </div>
-        <label className="check ai-opt"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> {t('Que la IA mire la imagen para escribir el texto')}</label>
+        <label className="check ai-opt"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> {isVideo ? t('Que la IA mire el video para escribir el texto') : t('Que la IA mire la imagen para escribir el texto')}</label>
         <textarea ref={capRef} className="caption" rows={7} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={t('Escribe el texto de tu publicación…')} />
         <div className="counter">
           <span className="counter-l">
@@ -224,6 +233,8 @@ export default function Composer({ onDone, onDiscard }) {
         )}
         {isVideo && videoWarnings(video, platforms).map((w, i) => <p key={i} className="warn">⚠️ {w}</p>)}
         {!isVideo && formatMismatch.length > 0 && <p className="warn">⚠️ {t('El formato “{f}” no está pensado para {p}. Considera cambiar el formato.', { f: t(fmt.label), p: formatMismatch.map((m) => PLATFORMS[m].name).join(', ') })}</p>}
+        {!isVideo && fmts.length > 1 && platforms.includes('instagram') && igFeedCount > 1 && <p className="warn">⚠️ {t('Instagram publicará un solo post (“{f}”) y, si lo marcaste, la story.', { f: t(getFormat(fmts.find((f) => f !== 'ig-story')).label) })}</p>}
+        {!isVideo && fmts.includes('ig-story') && platforms.includes('instagram') && <p className="hint" style={{ justifyContent: 'flex-start', textAlign: 'left' }}>{t('Las stories no llevan texto: lo que quieras mostrar debe ir dentro de la imagen.')}</p>}
         <div className="actions">
           <label className="inl">{t('Programar para')}<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
           <button className="btn ghost" disabled={busy} onClick={() => run('draft')}>{t('Guardar borrador')}</button>

@@ -7,7 +7,10 @@
  */
 import { t, getLang } from './i18n.jsx'
 import { loadVideo } from './mediaStore.js'
+import { designFormats, formatsFor, getFormat } from './formats.js'
+import { renderToDataURL } from './render.js'
 import { supabase } from './supabase.js'
+import { logAI, isLimitMsg } from './aiUsage.js'
 
 const env = import.meta.env
 
@@ -45,7 +48,7 @@ export async function handleOAuthCallback() {
 }
 
 /** Sube la imagen/video a Storage (bucket público) para que Instagram/Facebook puedan descargarlos. */
-async function uploadMedia(post, kind) {
+async function uploadMedia(post, kind, src = post.image, tag = '') {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error(t('Inicia sesión para continuar'))
   let blob, ext
@@ -54,10 +57,10 @@ async function uploadMedia(post, kind) {
     if (!blob) throw new Error(t('No se encontró el video guardado'))
     ext = (blob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov')
   } else {
-    blob = await (await fetch(post.image)).blob()
+    blob = await (await fetch(src)).blob()
     ext = blob.type === 'image/png' ? 'png' : 'jpg'
   }
-  const path = `${session.user.id}/${post.id}-${Date.now()}.${ext}`
+  const path = `${session.user.id}/${post.id}${tag}-${Date.now()}.${ext}`
   const { error } = await supabase.storage.from('post-media').upload(path, blob, { contentType: blob.type, upsert: true })
   if (error) throw new Error(error.message)
   return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
@@ -65,7 +68,15 @@ async function uploadMedia(post, kind) {
 
 export async function publishPost(post, accounts) {
   const results = {}
-  const media = {} // se sube una sola vez por publicación
+  const media = {} // se sube una sola vez por publicación (video) o por formato (imagen)
+  const isVideo = post.mediaType === 'video'
+  const fmts = isVideo || !post.design ? [post.format] : designFormats(post.design)
+  const imageUrl = async (fid) => {
+    if (media[fid]) return media[fid]
+    // la imagen guardada corresponde al formato visible; los demás se renderizan desde el mismo diseño
+    const src = fid === post.format || !post.design ? post.image : await renderToDataURL({ ...post.design, format: fid })
+    return (media[fid] = await uploadMedia(post, 'image', src, '-' + fid))
+  }
   for (const p of post.platforms) {
     const acc = accounts[p]
     if (!acc) { results[p] = { ok: false, error: t('Cuenta no conectada') }; continue }
@@ -74,18 +85,27 @@ export async function publishPost(post, accounts) {
       results[p] = { ok: true, demo: true }
       continue
     }
-    try {
-      const isVideo = post.mediaType === 'video'
-      if (isVideo) media.videoUrl ||= await uploadMedia(post, 'video')
-      else if (post.image) media.imageUrl ||= await uploadMedia(post, 'image')
-      const r = await socialCall('publish', {
-        platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
-        mediaType: post.mediaType || 'photo', format: post.format, ...media,
-      })
-      results[p] = { ok: true, permalink: r?.result?.permalink, mediaId: r?.result?.id }
-    } catch (e) {
-      results[p] = { ok: false, error: e.message }
+    const targets = isVideo ? [post.format] : formatsFor(p, fmts)
+    const done = [...(post.results?.[p]?.done || [])] // formatos ya publicados en un intento anterior: no se repiten
+    const errors = []
+    let main = null
+    for (const fid of targets) {
+      if (done.includes(fid)) continue
+      try {
+        const m = {}
+        if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video')
+        else if (post.image) m.imageUrl = await imageUrl(fid)
+        const r = await socialCall('publish', {
+          platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
+          mediaType: post.mediaType || 'photo', format: fid, ...m,
+        })
+        done.push(fid)
+        if (!main || fid !== 'ig-story') main = { permalink: r?.result?.permalink, mediaId: r?.result?.id } // el enlace/ID que se guarda es el del post, no el de la story
+      } catch (e) {
+        errors.push(targets.length > 1 ? `${getFormat(fid).short}: ${e.message}` : e.message)
+      }
     }
+    results[p] = errors.length ? { ok: false, error: errors.join(' · '), done, ...main } : { ok: true, done, ...main }
   }
   return results
 }
@@ -155,16 +175,18 @@ export function shrinkImage(dataUrl, max = 768) {
 }
 
 /** Genera el texto con Gemini a través de la Edge Function `generate-caption` (la API key nunca está en el navegador). */
-export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags, mediaType, image }) {
+export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags, mediaType, image, frames }) {
   const { data, error } = await supabase.functions.invoke('generate-caption', {
-    body: { topic, tone, networks, maxLen, maxTags, mediaType, image, lang: getLang() },
+    body: { topic, tone, networks, maxLen, maxTags, mediaType, image, frames, lang: getLang() },
   })
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    logAI('gemini', 'Textos', isLimitMsg(msg) ? 'limit' : 'error')
     throw new Error(msg)
   }
   if (!data?.caption) throw new Error(data?.error || t('La IA no devolvió texto'))
+  logAI('gemini', 'Textos')
   return data.caption
 }
 
@@ -176,9 +198,11 @@ export async function generateLayerTextsAI({ layers, topic }) {
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    logAI('gemini', 'Textos', isLimitMsg(msg) ? 'limit' : 'error')
     throw new Error(msg)
   }
   if (!Array.isArray(data?.texts) || !data.texts.length) throw new Error(data?.error || t('La IA no devolvió texto'))
+  logAI('gemini', 'Textos')
   return data.texts
 }
 
@@ -191,6 +215,7 @@ export async function generateImageAI({ prompt, aspectRatio, image }) {
     throw new Error(msg)
   }
   if (!data?.image) throw new Error(data?.error || t('La IA no devolvió una imagen'))
+  logAI(/^(cloudflare|pollinations)$/.test(data.model) ? data.model : 'gemini', 'Imágenes')
   // El generador gratuito (Pollinations) estampa su marca en la esquina inferior derecha: se recorta la franja de abajo
   return data.model === 'pollinations' ? cropWatermark(data.image) : data.image
 }

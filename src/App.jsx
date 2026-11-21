@@ -3,6 +3,7 @@ import { useApp } from './lib/store.jsx'
 import Login from './components/Login.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Accounts from './components/Accounts.jsx'
+import AICredits from './components/AICredits.jsx'
 import Composer from './components/Composer.jsx'
 import Posts from './components/Posts.jsx'
 import Calendar from './components/Calendar.jsx'
@@ -15,9 +16,10 @@ const NAV = [
   { id: 'posts', label: 'Publicaciones', icon: 'grid' },
   { id: 'calendar', label: 'Calendario', icon: 'cal' },
   { id: 'accounts', label: 'Cuentas', icon: 'link' },
+  { id: 'credits', label: 'Créditos IA', icon: 'magic' },
 ]
 
-const SLUG = { dashboard: 'dashboard', composer: 'create-post', posts: 'posts', calendar: 'calendar', accounts: 'accounts' }
+const SLUG = { dashboard: 'dashboard', composer: 'create-post', posts: 'posts', calendar: 'calendar', accounts: 'accounts', credits: 'ai-credits' }
 const PAGE_BY_SLUG = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]))
 
 export default function App() {
@@ -87,6 +89,7 @@ export default function App() {
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}
         {page === 'accounts' && <Accounts />}
+        {page === 'credits' && <AICredits />}
       </main>
       {toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}
     </div>

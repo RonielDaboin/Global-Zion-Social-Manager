@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FORMATS, TEMPLATES, getFormat, newLayer, uid } from '../lib/formats.js'
+import { FORMATS, TEMPLATES, designFormats, getFormat, newLayer, uid } from '../lib/formats.js'
 import { drawDesign, ensureFonts, loadImage, renderToDataURL, FX_DEFAULT } from '../lib/render.js'
 import { Icon } from './ui.jsx'
 import FontPicker from './FontPicker.jsx'
@@ -174,6 +174,16 @@ export default function ImageEditor({ design, setDesign }) {
     return { cx, cy, rad, top: R(mid, b.y - 10), rot: R(mid, b.y - 80), scl: R(b.x + b.w + 14, b.y + b.h + 10) }
   }
   const patch = (p) => setDesign({ ...design, ...p })
+  const fmts = designFormats(design)
+  // Los botones de formato se marcan/desmarcan; el visor muestra uno y se rota con ‹ ›
+  const toggleFormat = (id) => {
+    if (fmts.includes(id)) {
+      if (fmts.length === 1) return
+      const next = fmts.filter((x) => x !== id)
+      patch({ formats: next, format: design.format === id ? next[0] : design.format })
+    } else patch({ formats: [...fmts, id], format: id })
+  }
+  const goFormat = (dir) => patch({ format: fmts[(fmts.indexOf(design.format) + dir + fmts.length) % fmts.length] })
   const patchBg = (p) => patch({ bg: { ...design.bg, ...p } })
   const patchLayer = (p) => patch({ layers: design.layers.map((l) => (l.id === sel ? { ...l, ...p } : l)) })
 
@@ -282,7 +292,7 @@ export default function ImageEditor({ design, setDesign }) {
   }
   const applyTemplate = (tpl) => {
     const d = tpl.make()
-    setDesign({ format: design.format, ...d, bg: { ...d.bg, image: design.bg.image || aiImage?.image || upImage?.image || null } })
+    setDesign({ format: design.format, formats: design.formats, ...d, bg: { ...d.bg, image: design.bg.image || aiImage?.image || upImage?.image || null } })
     setSel(d.layers[0].id)
   }
   // Reduce tamaño para no saturar el almacenamiento local
@@ -400,6 +410,15 @@ export default function ImageEditor({ design, setDesign }) {
           <button className="btn ghost sm" onClick={() => setFull(true)} title={t('Pantalla completa')}>⛶</button>
           <button className={'btn ghost sm cine-btn' + (cine ? ' active' : '')} onClick={() => setCine((c) => !c)} title={t('Modo cine')} aria-pressed={cine}>🎬</button>
         </div>
+        {fmts.length > 1 && (
+          <div className="fmt-nav" role="group" aria-label={t('Formatos a publicar')}>
+            <button className="btn ghost sm" onClick={() => goFormat(-1)} aria-label={t('Formato anterior')}>‹</button>
+            <div className="fmt-dots">
+              {fmts.map((id) => <button key={id} className={'fmt-dot' + (id === design.format ? ' on' : '')} onClick={() => patch({ format: id })}>{getFormat(id).short}</button>)}
+            </div>
+            <button className="btn ghost sm" onClick={() => goFormat(1)} aria-label={t('Formato siguiente')}>›</button>
+          </div>
+        )}
         <div className="canvas-scroll">
           <div className="canvas-wrap" ref={wrapRef} tabIndex={0} onKeyDown={key} style={{ aspectRatio: `${fmt.w}/${fmt.h}`, width: `${zoom * 100}%`, maxHeight: zoom === 1 ? '74vh' : 'none' }}>
             <canvas ref={canvas} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
@@ -416,11 +435,12 @@ export default function ImageEditor({ design, setDesign }) {
         </div>
         <section>
           <h4>{t('Formato')}</h4>
-          <div className="chips">
+          <div className="chips" role="group" aria-label={t('Formato')}>
             {FORMATS.map((f) => (
-              <button key={f.id} className={'chip' + (f.id === design.format ? ' on' : '')} onClick={() => patch({ format: f.id })}>{t(f.label)}</button>
+              <button key={f.id} aria-pressed={fmts.includes(f.id)} className={'chip' + (fmts.includes(f.id) ? ' on' : '') + (f.id === design.format ? ' cur' : '')} onClick={() => toggleFormat(f.id)}>{fmts.includes(f.id) ? '✓ ' : ''}{t(f.label)}</button>
             ))}
           </div>
+          <p className="hint" style={{ justifyContent: 'flex-start', textAlign: 'left' }}>{t('Marca varios formatos para publicarlos a la vez (Instagram: un post y una story).')}</p>
         </section>
 
         <section>
