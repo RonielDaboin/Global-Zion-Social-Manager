@@ -88,6 +88,7 @@ a.btn { text-decoration: none; }
 .empty { text-align: center; color: var(--muted); padding: 40px; }
 .banner { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; }
 .banner.err { background: var(--tag-red); color: var(--tag-red-t); }
+.banner.trial { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--tag-blue); color: var(--tag-blue-t); font-weight: 600; }
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--green); padding: 12px 18px; border-radius: 12px; z-index: 99; box-shadow: var(--shadow); max-width: 380px; animation: up .25s; }
 .toast.err { border-color: var(--red); }
 @keyframes up { from { transform: translateY(12px); opacity: 0; } }

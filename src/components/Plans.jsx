@@ -5,12 +5,13 @@ import { t, useLang } from '../lib/i18n.jsx'
 import { PLAN_LIST, COMPARE, PRICES, fmtPrice, paypalReady } from '../lib/plans.js'
 import { Icon } from './ui.jsx'
 import PayPalButton from './PayPalButton.jsx'
+import { GoogleLogo } from './Login.jsx'
 
 const Cell = ({ v }) => (v === true ? <Icon name="check" size={16} /> : v === false ? <span className="pl-no">—</span> : <span>{t(v)}</span>)
 
 /** Ventana con los tres planes y la tabla comparativa. Se abre desde el login, el perfil o al tocar algo bloqueado. */
 export default function PlansModal() {
-  const { plansHint, closePlans: close0, session, access, notify, logout } = useApp()
+  const { plansHint, closePlans: close0, session, access, notify, logout, loginWithGoogle } = useApp()
   useLang()
   // Con la prueba gratuita terminada el modal no se puede cerrar: hay que suscribirse (o salir de la cuenta)
   const forced = !!session && access.expired && paypalReady // sin PayPal configurado no se bloquea a nadie
@@ -54,7 +55,9 @@ export default function PlansModal() {
                     : session ? <PayPalButton key={p.id} planId={p.id} userId={session.id}
                         onDone={() => { notify(t('¡Pago confirmado! Tu plan {n} ya está activo.', { n: p.name })); closePlans() }}
                         onError={(m) => notify(m, 'err')} />
-                      : <p className="muted small">{t('Inicia sesión para suscribirte.')}</p>
+                      : <button type="button" className="btn gbtn wide" onClick={() => loginWithGoogle().catch((e) => notify(e.message, 'err'))}>
+                          <GoogleLogo /> {t('Continuar con Google para suscribirme')}
+                        </button>
                 )}
               </div>
             </div>

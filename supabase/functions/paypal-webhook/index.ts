@@ -4,8 +4,8 @@
 // Cada aviso se verifica con PayPal (firma) antes de hacer nada.
 //
 // Despliegue (SIN verificación JWT, porque PayPal no manda token de Supabase):
-//   supabase functions deploy paypal-webhook --no-verify-jwt --project-ref axshbrskybmydywwpdla
-// URL a registrar en PayPal: https://axshbrskybmydywwpdla.supabase.co/functions/v1/paypal-webhook
+//   supabase functions deploy paypal-webhook --no-verify-jwt --project-ref bknwnurzxaxtkgnrriva
+// URL a registrar en PayPal: https://bknwnurzxaxtkgnrriva.supabase.co/functions/v1/paypal-webhook
 
 import { getUser, paypal, planOfPaypalPlan, setAppMetadata } from '../_shared/paypal.ts'
 

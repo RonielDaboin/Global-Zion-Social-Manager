@@ -3,7 +3,7 @@
 // que pertenece a este usuario (custom_id) y qué plan es, y solo entonces escribe app_metadata.plan.
 //
 // Despliegue:
-//   supabase functions deploy paypal-activate --project-ref axshbrskybmydywwpdla
+//   supabase functions deploy paypal-activate --project-ref bknwnurzxaxtkgnrriva
 // (verify_jwt activado: solo usuarios con sesión)
 
 import { cancelSubscription, getSubscription, getUser, planOfPaypalPlan, setAppMetadata } from '../_shared/paypal.ts'

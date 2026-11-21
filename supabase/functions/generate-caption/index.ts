@@ -2,8 +2,8 @@
 // La API key vive solo aquí, como secreto (GEMINI_API_KEY); nunca llega al navegador.
 //
 // Despliegue:
-//   supabase secrets set GEMINI_API_KEY=tu_clave --project-ref axshbrskybmydywwpdla
-//   supabase functions deploy generate-caption --project-ref axshbrskybmydywwpdla
+//   supabase secrets set GEMINI_API_KEY=tu_clave --project-ref bknwnurzxaxtkgnrriva
+//   supabase functions deploy generate-caption --project-ref bknwnurzxaxtkgnrriva
 //
 // Por defecto exige un usuario con sesión iniciada (verify_jwt = true).
 

@@ -5,7 +5,7 @@ import { PLATFORMS } from '../lib/formats.js'
 import { Logo, ThemeToggle, LangToggle, Icon } from './ui.jsx'
 import { Footer } from './Legal.jsx'
 
-const GoogleLogo = () => (
+export const GoogleLogo = () => (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
     <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6C12.3 13.5 17.7 9.5 24 9.5z" />
     <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z" />
@@ -73,12 +73,24 @@ function AuthBg() {
   )
 }
 
+/** Si Supabase/Google devolvió un error en la URL (p. ej. registro desactivado) se muestra y se limpia la dirección. */
+function urlAuthError() {
+  try {
+    const q = new URLSearchParams(window.location.search)
+    const code = q.get('error_code'), desc = q.get('error_description')
+    if (!code && !desc) return ''
+    window.history.replaceState(null, '', window.location.pathname + '#/dashboard')
+    if (code === 'signup_disabled') return t('El registro de cuentas nuevas está desactivado por ahora. Escríbenos para darte acceso.')
+    return desc ? desc.replace(/\+/g, ' ') : t('No se pudo iniciar sesión con Google. Inténtalo de nuevo.')
+  } catch { return '' }
+}
+
 export default function Login() {
   const { login, register, loginWithGoogle, openPlans } = useApp()
   useLang()
   const [mode, setMode] = useState('login')
   const [f, setF] = useState({ name: '', email: '', password: '' })
-  const [err, setErr] = useState('')
+  const [err, setErr] = useState(urlAuthError)
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 

@@ -151,6 +151,8 @@ export function AppProvider({ children }) {
     if (error) throw authErr(error)
   }
   const loginWithGoogle = async () => {
+    // Al volver de Google se abre el modal de planes (si el usuario no tiene suscripción) para que pueda pagar
+    try { sessionStorage.setItem('gz_plans_after_login', '1') } catch { /* ignore */ }
     const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account' } } })
     if (error) throw authErr(error)
   }
@@ -225,6 +227,16 @@ export function AppProvider({ children }) {
   const access = accessOf(session)
   const openPlans = (hint = '') => setPlansHint(hint)
   const closePlans = () => setPlansHint(null)
+  // Tras entrar con Google se muestran los planes una vez (solo si aún no hay suscripción)
+  useEffect(() => {
+    if (!session) return
+    try {
+      if (sessionStorage.getItem('gz_plans_after_login')) {
+        sessionStorage.removeItem('gz_plans_after_login')
+        if (access.onTrial) setPlansHint('')
+      }
+    } catch { /* ignore */ }
+  }, [session?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const value = {
     access, plansHint, openPlans, closePlans,

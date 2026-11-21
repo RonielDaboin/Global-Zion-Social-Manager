@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApp } from './lib/store.jsx'
+import { paypalReady } from './lib/plans.js'
 import Login from './components/Login.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Accounts from './components/Accounts.jsx'
@@ -131,6 +132,12 @@ export default function App() {
             <button className="icon-btn" title={t('Cerrar sesión')} aria-label={t('Cerrar sesión')} onClick={() => setAskOut(true)}><Icon name="out" /></button>
           </div>
         </div>
+        {paypalReady && access.onTrial && !access.expired && (
+          <div className="banner trial">
+            <span>{t('Prueba gratuita: te quedan {n} días.', { n: access.trialDaysLeft })}</span>
+            <button type="button" className="btn primary sm" onClick={() => openPlans()}>{t('Suscribirme')}</button>
+          </div>
+        )}
         {storageFull && <div className="banner err">{t('El almacenamiento del navegador está lleno: elimina publicaciones antiguas con imágenes.')}</div>}
         {page === 'dashboard' && <Dashboard go={go} edit={edit} />}
         {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} />}

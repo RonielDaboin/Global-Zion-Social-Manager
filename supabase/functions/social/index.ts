@@ -4,7 +4,7 @@
 // Secretos necesarios (solo las redes que quieras activar):
 //   supabase secrets set META_APP_ID=... META_APP_SECRET=...            # Instagram + Facebook
 //   supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...  # Gmail
-//   supabase functions deploy social --project-ref axshbrskybmydywwpdla
+//   supabase functions deploy social --project-ref bknwnurzxaxtkgnrriva
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { planOfUser, trialExpired, PLATFORMS_BY_PLAN, MAX_ACCOUNTS } from '../_shared/plan.ts'
 

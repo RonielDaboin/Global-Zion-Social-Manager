@@ -2,7 +2,7 @@
 // La API key vive solo aquí, como secreto (GEMINI_API_KEY, el mismo que usa generate-caption).
 //
 // Despliegue:
-//   supabase functions deploy generate-image --project-ref axshbrskybmydywwpdla
+//   supabase functions deploy generate-image --project-ref bknwnurzxaxtkgnrriva
 //
 // Proveedor (secreto IMAGE_PROVIDER):
 //   cloudflare                 -> Cloudflare Workers AI (FLUX.1 schnell). Requiere los secretos CF_ACCOUNT_ID y CF_API_TOKEN
@@ -13,7 +13,7 @@
 // Opcional: GEMINI_IMAGE_MODEL para fijar otro modelo de Gemini; CF_IMAGE_MODEL para otro modelo de Cloudflare.
 //
 // Cloudflare:
-//   supabase secrets set CF_ACCOUNT_ID=tu_account_id CF_API_TOKEN=tu_token IMAGE_PROVIDER=cloudflare --project-ref axshbrskybmydywwpdla
+//   supabase secrets set CF_ACCOUNT_ID=tu_account_id CF_API_TOKEN=tu_token IMAGE_PROVIDER=cloudflare --project-ref bknwnurzxaxtkgnrriva
 // Exige un usuario con sesión iniciada (verify_jwt = true). La generación de imágenes en la
 // API de Gemini normalmente requiere facturación activada en Google AI Studio.
 

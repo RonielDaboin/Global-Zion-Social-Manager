@@ -14,16 +14,16 @@ si luego cancela o falla el cobro, `paypal-webhook` lo devuelve a Básico.
 
 ## 2. Webhook
 En la app de PayPal → *Webhooks* → *Add webhook*:
-- URL: `https://axshbrskybmydywwpdla.supabase.co/functions/v1/paypal-webhook`
+- URL: `https://bknwnurzxaxtkgnrriva.supabase.co/functions/v1/paypal-webhook`
 - Eventos: `BILLING.SUBSCRIPTION.ACTIVATED`, `CANCELLED`, `SUSPENDED`, `EXPIRED` y `BILLING.SUBSCRIPTION.PAYMENT.FAILED`.
 - Copia el **Webhook ID**.
 
 ## 3. Secretos y despliegue (Supabase)
 ```
-supabase secrets set PAYPAL_CLIENT_ID=... PAYPAL_SECRET=... PAYPAL_PLAN_BASIC=P-... PAYPAL_PLAN_PRO=P-... PAYPAL_PLAN_PRO_PLUS=P-... PAYPAL_WEBHOOK_ID=... --project-ref axshbrskybmydywwpdla
-# Solo para pruebas: supabase secrets set PAYPAL_ENV=sandbox --project-ref axshbrskybmydywwpdla
-supabase functions deploy paypal-activate --project-ref axshbrskybmydywwpdla
-supabase functions deploy paypal-webhook --no-verify-jwt --project-ref axshbrskybmydywwpdla
+supabase secrets set PAYPAL_CLIENT_ID=... PAYPAL_SECRET=... PAYPAL_PLAN_BASIC=P-... PAYPAL_PLAN_PRO=P-... PAYPAL_PLAN_PRO_PLUS=P-... PAYPAL_WEBHOOK_ID=... --project-ref bknwnurzxaxtkgnrriva
+# Solo para pruebas: supabase secrets set PAYPAL_ENV=sandbox --project-ref bknwnurzxaxtkgnrriva
+supabase functions deploy paypal-activate --project-ref bknwnurzxaxtkgnrriva
+supabase functions deploy paypal-webhook --no-verify-jwt --project-ref bknwnurzxaxtkgnrriva
 ```
 
 ## 4. Variables del frontend

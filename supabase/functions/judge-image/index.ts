@@ -3,7 +3,7 @@
 // La API key vive solo aquí, como secreto (GEMINI_API_KEY).
 //
 // Despliegue:
-//   supabase functions deploy judge-image --project-ref axshbrskybmydywwpdla
+//   supabase functions deploy judge-image --project-ref bknwnurzxaxtkgnrriva
 // (usa el mismo secreto GEMINI_API_KEY que generate-caption)
 
 import { requirePlan } from '../_shared/plan.ts'

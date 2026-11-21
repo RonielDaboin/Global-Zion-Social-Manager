@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Proyecto "Base de Clientes" (Global Zion ORG). La publishable key es pública por diseño.
-const URL = import.meta.env.VITE_SUPABASE_URL || 'https://axshbrskybmydywwpdla.supabase.co'
-const KEY = import.meta.env.VITE_SUPABASE_KEY || 'sb_publishable_wwJfre1OctDbHr4va97YNQ_psIaFZ9I'
+// Proyecto propio del gestor de redes sociales. La publishable key es pública por diseño.
+const URL = import.meta.env.VITE_SUPABASE_URL || 'https://bknwnurzxaxtkgnrriva.supabase.co'
+const KEY = import.meta.env.VITE_SUPABASE_KEY || 'sb_publishable_CCqQuyMGkuNt3GyOK9NQCQ_QKujjOpt'
 
 export const supabase = createClient(URL, KEY)
 
