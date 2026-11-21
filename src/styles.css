@@ -1988,7 +1988,7 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .plans-hint { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); font-weight: 600; font-size: 14px; }
 .plans-sub { margin: 8px 0 0; font-size: 18px; }
 .plan-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.plan-card { position: relative; display: grid; gap: 10px; align-content: start; padding: 20px; border-radius: 16px; border: 1px solid var(--line); background: var(--bg2); }
+.plan-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px; border: 1px solid var(--line); background: var(--bg2); }
 .plan-card h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 20px; }
 .plan-card ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
 .plan-card li { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.35; }
@@ -1999,7 +1999,7 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .plan-card.gold h3 svg { color: #f5c542; }
 .plan-card.cur { outline: 2px solid var(--blue); outline-offset: 2px; }
 .plan-ribbon { position: absolute; top: -11px; right: 16px; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #1a1200; background: linear-gradient(120deg, #f5c542, #ffe08a); }
-.plan-cur { justify-self: start; margin-top: 4px; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; background: var(--tag-blue); color: var(--tag-blue-t); }
+.plan-cur { align-self: flex-start; margin-top: 4px; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; background: var(--tag-blue); color: var(--tag-blue-t); }
 .plan-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
 .plan-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 14px; }
 .plan-table th, .plan-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; }
@@ -2010,12 +2010,15 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .plan-table td svg { color: var(--green); vertical-align: middle; }
 .pl-no { color: var(--muted); opacity: .6; }
 .plans-note { text-align: center; }
-.plan-buy { display: grid; gap: 10px; margin-top: auto; padding-top: 6px; }
-.plan-trial { justify-self: start; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; background: var(--tag-green, #1f9d5522); color: var(--green); }
+.plan-buy { display: grid; gap: 12px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); }
+.plan-trial { align-self: flex-start; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; background: var(--tag-green, #1f9d5522); color: var(--green); }
 .plan-price { font-size: 14px; }
 .plan-price b { font-size: 28px; line-height: 1; }
-.pp-wrap { display: grid; gap: 6px; min-width: 0; }
-.pp-box { min-height: 0; position: relative; z-index: 0; }
+.pp-wrap { display: grid; gap: 6px; min-width: 0; width: 100%; }
+/* El iframe de PayPal trae fondo blanco: se enmarca como un panel de pago para que no desentone con la tarjeta oscura */
+.pp-box { width: 100%; min-height: 0; position: relative; z-index: 0; box-sizing: border-box; padding: 12px 12px 6px; border-radius: 14px; background: #fff; border: 1px solid #e5e7eb; box-shadow: 0 10px 24px -14px #0008; }
+.pp-secure { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.plan-buy .gbtn { min-height: 44px; border-radius: 12px; }
 .lock-tag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 7px; border-radius: 99px; font-size: 10px; font-weight: 800; letter-spacing: .04em; background: var(--tag-gold); color: var(--tag-gold-t); vertical-align: middle; }
 .btn.locked { opacity: .85; }
 .link-plans { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 99px; border: 1px solid var(--glass-line); background: var(--glass-2); font-weight: 700; font-size: 13px; }

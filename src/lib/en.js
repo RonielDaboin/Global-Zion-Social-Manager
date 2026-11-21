@@ -739,6 +739,7 @@ const EN = {
   '¡Pago confirmado! Tu plan {n} ya está activo.': 'Payment confirmed! Your {n} plan is now active.',
   'PayPal no pudo completar el pago. No se te ha cobrado nada.': 'PayPal could not complete the payment. You have not been charged.',
   'Cargando PayPal…': 'Loading PayPal…',
+  'Pago seguro con PayPal · cancela cuando quieras': 'Secure payment with PayPal · cancel any time',
   'Activando tu plan…': 'Activating your plan…',
   'No se pudo cargar PayPal. Revisa tu conexión o desactiva el bloqueador de anuncios.': 'PayPal could not load. Check your connection or disable your ad blocker.',
   'Para empezar a publicar': 'To start publishing',

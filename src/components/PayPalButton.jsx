@@ -51,7 +51,8 @@ export default function PayPalButton({ planId, userId, onDone, onError }) {
       {state === 'loading' && <span className="muted small">{t('Cargando PayPal…')}</span>}
       {state === 'busy' && <span className="muted small">{t('Activando tu plan…')}</span>}
       {state === 'error' && <span className="muted small">{t('No se pudo cargar PayPal. Revisa tu conexión o desactiva el bloqueador de anuncios.')}</span>}
-      <div ref={box} className="pp-box" style={{ display: state === 'busy' ? 'none' : undefined }} />
+      <div ref={box} className="pp-box" style={{ display: state === 'busy' || state === 'error' ? 'none' : undefined }} />
+      {state === 'ready' && <span className="pp-secure">🔒 {t('Pago seguro con PayPal · cancela cuando quieras')}</span>}
     </div>
   )
 }
