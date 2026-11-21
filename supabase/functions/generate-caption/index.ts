@@ -15,8 +15,12 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 
-// Cupo gratuito diario por modelo (AI Studio): los Flash Lite dan 500 peticiones/día; los Flash normales solo 20.
-const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
+// Modelos gratuitos de mejor a peor calidad. Siempre se intenta primero el mejor; si su cupo diario se agota (429) o está saturado (503) pasa al siguiente.
+// Cupo gratuito por modelo (AI Studio): los Flash normales dan 20 peticiones/día y los Flash Lite 500.
+const MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
+// GEMINI_MODEL (opcional) fuerza un modelo concreto al principio de la lista
+const MODEL = Deno.env.get('GEMINI_MODEL') || MODELS[0]
+const ALLOWED = MODELS
 // Modelos que el cliente puede pedir (lista cerrada, para poder comparar velocidad y calidad)
 const ALLOWED = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash']
 
