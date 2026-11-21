@@ -1,0 +1,279 @@
+{
+  "updated": "2026-11",
+  "groups": [
+    {
+      "id": "popular",
+      "fonts": [
+        {
+          "id": "Lato",
+          "label": "Lato"
+        },
+        {
+          "id": "Roboto",
+          "label": "Roboto"
+        },
+        {
+          "id": "Open Sans",
+          "label": "Open Sans"
+        },
+        {
+          "id": "Nunito",
+          "label": "Nunito"
+        },
+        {
+          "id": "Inter",
+          "label": "Inter"
+        },
+        {
+          "id": "DM Sans",
+          "label": "DM Sans"
+        },
+        {
+          "id": "Merriweather",
+          "label": "Merriweather"
+        },
+        {
+          "id": "Oswald",
+          "label": "Oswald"
+        },
+        {
+          "id": "Bebas Neue",
+          "label": "Bebas Neue"
+        },
+        {
+          "id": "Kanit",
+          "label": "Kanit"
+        }
+      ]
+    },
+    {
+      "id": "trending",
+      "fonts": [
+        {
+          "id": "Shantell Sans",
+          "label": "Shantell Sans"
+        },
+        {
+          "id": "Firjar",
+          "label": "Firjar"
+        },
+        {
+          "id": "Annie Use Your Telescope",
+          "label": "Annie Use Your Telescope"
+        },
+        {
+          "id": "Mozilla Text",
+          "label": "Mozilla Text"
+        },
+        {
+          "id": "Averia Serif Libre",
+          "label": "Averia Serif Libre"
+        },
+        {
+          "id": "Neucha",
+          "label": "Neucha"
+        },
+        {
+          "id": "Akt",
+          "label": "Akt"
+        },
+        {
+          "id": "Yuji Syuku",
+          "label": "Yuji Syuku"
+        },
+        {
+          "id": "Funnel Sans",
+          "label": "Funnel Sans"
+        },
+        {
+          "id": "Bentham",
+          "label": "Bentham"
+        }
+      ]
+    },
+    {
+      "id": "business",
+      "fonts": [
+        {
+          "id": "Montserrat",
+          "label": "Montserrat"
+        },
+        {
+          "id": "Bricolage Grotesque",
+          "label": "Bricolage Grotesque"
+        },
+        {
+          "id": "Plus Jakarta Sans",
+          "label": "Plus Jakarta Sans"
+        },
+        {
+          "id": "Poppins",
+          "label": "Poppins"
+        },
+        {
+          "id": "Cormorant Garamond",
+          "label": "Cormorant Garamond"
+        },
+        {
+          "id": "Karla",
+          "label": "Karla"
+        },
+        {
+          "id": "Smooch Sans",
+          "label": "Smooch Sans"
+        },
+        {
+          "id": "Fira Sans",
+          "label": "Fira Sans"
+        },
+        {
+          "id": "Public Sans",
+          "label": "Public Sans"
+        },
+        {
+          "id": "Quicksand",
+          "label": "Quicksand"
+        }
+      ]
+    },
+    {
+      "id": "casual",
+      "fonts": [
+        {
+          "id": "Delius",
+          "label": "Delius"
+        },
+        {
+          "id": "Dancing Script",
+          "label": "Dancing Script"
+        },
+        {
+          "id": "Yellowtail",
+          "label": "Yellowtail"
+        },
+        {
+          "id": "Kaushan Script",
+          "label": "Kaushan Script"
+        },
+        {
+          "id": "Special Elite",
+          "label": "Special Elite"
+        },
+        {
+          "id": "Patua One",
+          "label": "Patua One"
+        },
+        {
+          "id": "Alex Brush",
+          "label": "Alex Brush"
+        },
+        {
+          "id": "Comfortaa",
+          "label": "Comfortaa"
+        },
+        {
+          "id": "Racing Sans One",
+          "label": "Racing Sans One"
+        },
+        {
+          "id": "Staatliches",
+          "label": "Staatliches"
+        }
+      ]
+    },
+    {
+      "id": "gamer",
+      "fonts": [
+        {
+          "id": "Share Tech",
+          "label": "Share Tech"
+        },
+        {
+          "id": "Black Ops One",
+          "label": "Black Ops One"
+        },
+        {
+          "id": "Rajdhani",
+          "label": "Rajdhani"
+        },
+        {
+          "id": "Orbitron",
+          "label": "Orbitron"
+        },
+        {
+          "id": "Press Start 2P",
+          "label": "Press Start 2P"
+        },
+        {
+          "id": "Exo 2",
+          "label": "Exo 2"
+        },
+        {
+          "id": "Chakra Petch",
+          "label": "Chakra Petch"
+        },
+        {
+          "id": "Silkscreen",
+          "label": "Silkscreen"
+        },
+        {
+          "id": "Saira",
+          "label": "Saira"
+        },
+        {
+          "id": "Iceland",
+          "label": "Iceland"
+        }
+      ]
+    },
+    {
+      "id": "others",
+      "fonts": [
+        {
+          "id": "Nanum Gothic",
+          "label": "Nanum Gothic"
+        },
+        {
+          "id": "Source Sans 3",
+          "label": "Source Sans 3"
+        },
+        {
+          "id": "Assistant",
+          "label": "Assistant"
+        },
+        {
+          "id": "Space Grotesk",
+          "label": "Space Grotesk"
+        },
+        {
+          "id": "Roboto Condensed",
+          "label": "Roboto Condensed"
+        },
+        {
+          "id": "Asap",
+          "label": "Asap"
+        },
+        {
+          "id": "Barlow Condensed",
+          "label": "Barlow Condensed"
+        },
+        {
+          "id": "Fredoka",
+          "label": "Fredoka"
+        },
+        {
+          "id": "Cormorant",
+          "label": "Cormorant"
+        },
+        {
+          "id": "Instrument Serif",
+          "label": "Instrument Serif"
+        },
+        {
+          "id": "Playfair Display",
+          "label": "Playfair Display"
+        }
+      ]
+    }
+  ]
+}

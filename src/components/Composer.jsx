@@ -5,6 +5,8 @@ import { renderToDataURL } from '../lib/render.js'
 import { generateCaption, generateCaptionAI, shrinkImage, suggestHashtags, TONE_LIST } from '../lib/social.js'
 import { t, useLang } from '../lib/i18n.jsx'
 import ImageEditor from './ImageEditor.jsx'
+import AutoPost from './AutoPost.jsx'
+import EmojiButton from './EmojiPicker.jsx'
 import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
 import { Icon, PlatformBadge } from './ui.jsx'
@@ -46,8 +48,21 @@ export default function Composer({ onDone, onDiscard }) {
   const [tone, setTone] = useState(w?.tone || 'inspirador')
   const [useImage, setUseImage] = useState(w?.useImage ?? true)
   const [genBusy, setGenBusy] = useState(false)
+  const [autoOpen, setAutoOpen] = useState(false)
+  const capRef = useRef(null)
   const [busy, setBusy] = useState(false)
-  const [mediaType, setMediaType] = useState(src.mediaType || 'photo')
+  const hashMedia = () => { const m = window.location.hash.match(/^#\/create-post\/(image|video)/); return m ? (m[1] === 'video' ? 'video' : 'photo') : null }
+  const [mediaType, setMediaType] = useState(src.mediaType || hashMedia() || 'photo')
+  // La URL refleja el tipo: #/create-post/image · #/create-post/video
+  useEffect(() => {
+    const h = '#/create-post/' + (mediaType === 'video' ? 'video' : 'image')
+    if (window.location.hash !== h) window.history.replaceState(null, '', h)
+  }, [mediaType])
+  useEffect(() => {
+    const on = () => { const m = hashMedia(); if (m) setMediaType(m) }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, []) // eslint-disable-line
   const [video, setVideo] = useState(src.video || null)
   const [videoFile, setVideoFile] = useState(null)
   useEffect(() => { if (src.mediaType === 'video') loadVideo(src.id).then((b) => b && setVideoFile(b)) }, []) // eslint-disable-line
@@ -122,6 +137,12 @@ export default function Composer({ onDone, onDiscard }) {
     onDone()
   }
 
+  // Rellena toda la publicación con el resultado del generador automático
+  const applyAuto = (a) => {
+    setDesign(a.design); setCaption(a.caption); setPlatforms(a.platforms); setWhen(a.when); setTopic(a.topic || '')
+    setTone(a.tone); setMediaType('photo'); setAutoOpen(false)
+    notify(t('Publicación generada. Revísala antes de publicar.'))
+  }
   const gen = async () => {
     if (genBusy) return
     setGenBusy(true)
@@ -143,20 +164,24 @@ export default function Composer({ onDone, onDiscard }) {
 
   return (
     <div className="page cmp">
-      <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige foto o video, escribe el texto y publica o programa.')}</p></div>
-        <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button></header>
+      <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige imagen o video, escribe el texto y publica o programa.')}</p></div>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn primary auto-btn" onClick={() => setAutoOpen(true)}>✨ {t('Crear con IA')}</button>
+          <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button>
+        </div></header>
+      {autoOpen && <AutoPost onClose={() => setAutoOpen(false)} onGenerated={applyAuto} />}
 
       <div className="card">
         <h3>1 · {t('Tipo de contenido')}</h3>
         <div className="media-type">
           <button className={'mt' + (!isVideo ? ' on' : '')} onClick={() => setMediaType('photo')}>
-            <span className="mt-ico">🖼️</span><b>{t('Foto')}</b><small>{t('Diseña una imagen con plantillas, textos y fondos')}</small>
+            <span className="mt-ico">🖼️</span><b>{t('Imagen')}</b><small>{t('Diseña una imagen con plantillas, textos y fondos')}</small>
           </button>
           <button className={'mt' + (isVideo ? ' on' : '')} onClick={() => setMediaType('video')}>
             <span className="mt-ico">🎬</span><b>{t('Video')}</b><small>{t('Sube un video, elige la portada y revisa los límites')}</small>
           </button>
         </div>
-        <h3 className="sub">{isVideo ? t('Herramientas de video') : t('Herramientas de foto')}</h3>
+        <h3 className="sub">{isVideo ? t('Herramientas de video') : t('Herramientas de imagen')}</h3>
         {isVideo
           ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} />
           : <ImageEditor design={design} setDesign={setDesign} />}
@@ -171,9 +196,12 @@ export default function Composer({ onDone, onDiscard }) {
           <button className="btn ghost" onClick={addTags}>{t('# Hashtags')}</button>
         </div>
         <label className="check ai-opt"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> {t('Que la IA mire la imagen para escribir el texto')}</label>
-        <textarea className="caption" rows={7} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={t('Escribe el texto de tu publicación…')} />
+        <textarea ref={capRef} className="caption" rows={7} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={t('Escribe el texto de tu publicación…')} />
         <div className="counter">
-          <span className={caption.length > maxLen ? 'bad' : ''}>{caption.length}/{maxLen} {t('caracteres')}</span>
+          <span className="counter-l">
+            <EmojiButton inputRef={capRef} value={caption} onChange={setCaption} label />
+            <span className={caption.length > maxLen ? 'bad' : ''}>{caption.length}/{maxLen} {t('caracteres')}</span>
+          </span>
           {tagLimit < 99 && <span className={tags > tagLimit ? 'bad' : ''}>{tags}/{tagLimit} hashtags</span>}
         </div>
       </div>

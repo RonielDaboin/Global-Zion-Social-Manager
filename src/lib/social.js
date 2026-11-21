@@ -39,7 +39,7 @@ export async function handleOAuthCallback() {
   if (!code || !state) return null
   if (state !== sessionStorage.getItem('gz_oauth_state')) return null
   sessionStorage.removeItem('gz_oauth_state')
-  window.history.replaceState({}, '', '/')
+  window.history.replaceState({}, '', '/' + window.location.hash)
   const data = await socialCall('callback', { code, state, redirectUri: window.location.origin + '/' })
   return { real: true, ...data }
 }
@@ -166,6 +166,50 @@ export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags
   }
   if (!data?.caption) throw new Error(data?.error || t('La IA no devolvió texto'))
   return data.caption
+}
+
+/** Escribe los textos del diseño (uno por capa activa, en orden) con Gemini vía `generate-texts`. */
+export async function generateLayerTextsAI({ layers, topic }) {
+  const { data, error } = await supabase.functions.invoke('generate-texts', {
+    body: { layers: layers.map((l) => ({ text: l.text, size: l.size, y: l.y })), topic, lang: getLang() },
+  })
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  if (!Array.isArray(data?.texts) || !data.texts.length) throw new Error(data?.error || t('La IA no devolvió texto'))
+  return data.texts
+}
+
+/** Genera o edita una imagen con Gemini vía la Edge Function `generate-image`. Devuelve un dataURL. */
+export async function generateImageAI({ prompt, aspectRatio, image }) {
+  const { data, error } = await supabase.functions.invoke('generate-image', { body: { prompt, aspectRatio, image } })
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  if (!data?.image) throw new Error(data?.error || t('La IA no devolvió una imagen'))
+  // El generador gratuito (Pollinations) estampa su marca en la esquina inferior derecha: se recorta la franja de abajo
+  return data.model === 'pollinations' ? cropWatermark(data.image) : data.image
+}
+
+/** Quita la franja inferior (donde va la marca de agua) y reescala al tamaño original, centrando el encuadre. */
+function cropWatermark(dataUrl, cut = 0.09) {
+  return new Promise((res) => {
+    const im = new Image()
+    im.onload = () => {
+      const W = im.naturalWidth, H = im.naturalHeight
+      const sw = W * (1 - cut), sh = H * (1 - cut)
+      const c = document.createElement('canvas')
+      c.width = W; c.height = H
+      c.getContext('2d').drawImage(im, (W - sw) / 2, 0, sw, sh, 0, 0, W, H)
+      res(c.toDataURL('image/jpeg', 0.92))
+    }
+    im.onerror = () => res(dataUrl)
+    im.src = dataUrl
+  })
 }
 
 export function suggestHashtags(topic) {

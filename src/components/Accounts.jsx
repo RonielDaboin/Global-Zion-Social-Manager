@@ -7,7 +7,7 @@ import { fmtDate, PlatformLogo } from './ui.jsx'
 
 const BLURB = {
   instagram: 'Publica posts, stories y reels en tu cuenta profesional de Instagram.',
-  tiktok: 'Publica fotos y videos en tu cuenta de TikTok.',
+  tiktok: 'Publica imágenes y videos en tu cuenta de TikTok.',
   facebook: 'Publica en tu página de Facebook.',
   twitter: 'Publica posts en tu cuenta de X (Twitter).',
   whatsapp: 'Envía mensajes e imágenes desde tu WhatsApp personal.',

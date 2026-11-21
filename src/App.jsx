@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from './lib/store.jsx'
 import Login from './components/Login.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -17,10 +17,30 @@ const NAV = [
   { id: 'accounts', label: 'Cuentas', icon: 'link' },
 ]
 
+const SLUG = { dashboard: 'dashboard', composer: 'create-post', posts: 'posts', calendar: 'calendar', accounts: 'accounts' }
+const PAGE_BY_SLUG = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]))
+
 export default function App() {
   const { session, authReady, logout, toast, storageFull, setDraft, draft } = useApp()
-  const [page, setPageRaw] = useState(() => { try { return sessionStorage.getItem('gz_page') || 'dashboard' } catch { return 'dashboard' } })
-  const setPage = (p) => { try { sessionStorage.setItem('gz_page', p) } catch { /* ignore */ } setPageRaw(p) }
+  // La sección actual se refleja en la URL (#/create-post) y se puede abrir/compartir directamente
+  const [page, setPageRaw] = useState(() => {
+    const fromHash = PAGE_BY_SLUG[window.location.hash.replace(/^#\/?/, '').split('/')[0]]
+    if (fromHash) return fromHash
+    try { return sessionStorage.getItem('gz_page') || 'dashboard' } catch { return 'dashboard' }
+  })
+  const setPage = (p) => {
+    try { sessionStorage.setItem('gz_page', p) } catch { /* ignore */ }
+    setPageRaw(p)
+    const h = '#/' + (SLUG[p] || p)
+    if (!window.location.hash.startsWith(h)) window.location.hash = h
+  }
+  useEffect(() => {
+    const sync = () => { const p = PAGE_BY_SLUG[window.location.hash.replace(/^#\/?/, '').split('/')[0]]; if (p) setPageRaw(p) }
+    sync()
+    if (!window.location.hash) window.history.replaceState(null, '', '#/' + (SLUG[page] || page))
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, []) // eslint-disable-line
   const [composerKey, setComposerKey] = useState(0)
   useLang()
 

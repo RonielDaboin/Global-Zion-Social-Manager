@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import AutoPost from './AutoPost.jsx'
+import { saveAsWip } from '../lib/autoPost.js'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang, locale } from '../lib/i18n.jsx'
 import { PLATFORMS, accountLabel, EMAIL_PROVIDERS } from '../lib/formats.js'
@@ -8,6 +11,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 export default function Dashboard({ go, edit }) {
   const { session, posts, accounts } = useApp()
   useLang()
+  const [auto, setAuto] = useState(false)
   const count = (s) => posts.filter((p) => p.status === s).length
   const scheduled = posts.filter((p) => p.status === 'scheduled').sort((a, b) => a.scheduledAt - b.scheduledAt)
   const next = scheduled.slice(0, 4)
@@ -43,6 +47,7 @@ export default function Dashboard({ go, edit }) {
           <h1>{t('Hola, {name}', { name: session.name.split(' ')[0] })} 👋</h1>
           <p>{summary}</p>
           <div className="hero-act">
+            <button className="btn primary auto-btn" onClick={() => setAuto(true)}>✨ {t('Crear con IA')}</button>
             <button className="btn primary" onClick={() => go('composer-new')}><Icon name="plus" size={16} /> {t('Crear publicación')}</button>
             <button className="btn ghost" onClick={() => go('calendar')}><Icon name="cal" size={16} /> {t('Calendario')}</button>
           </div>
@@ -162,6 +167,7 @@ export default function Dashboard({ go, edit }) {
           </section>
         </aside>
       </div>
+      {auto && <AutoPost onClose={() => setAuto(false)} onGenerated={(snap) => { try { sessionStorage.removeItem('gz_edit') } catch { /* ignore */ } saveAsWip(session?.id, snap); setAuto(false); go('composer-new') }} />}
     </div>
   )
 }
