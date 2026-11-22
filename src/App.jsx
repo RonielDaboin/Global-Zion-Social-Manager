@@ -103,7 +103,7 @@ export default function App() {
           <button className={'user-link' + (page === 'profile' ? ' on' : '')} title={t('Mi perfil')} onClick={() => go('profile')}>
           <span className="u-av"><Avatar session={session} /><i className="u-dot" /></span>
           <div className="uinfo">
-            <b>{session.name}{access.plan.id !== 'basic' && <em className={'u-plan ' + access.plan.tone}>{access.plan.id === 'pro_plus' ? 'PRO+' : access.plan.name.toUpperCase()}</em>}</b>
+            <b>{session.name}{access.plan.id !== 'basic' && <em className={'u-plan ' + access.plan.tone}>{access.plan.name.toUpperCase()}</em>}</b>
             <small>{access.role.id !== 'user' ? t(access.role.name) : session.email}</small>
           </div>
           <span className="u-chev" aria-hidden="true">›</span>

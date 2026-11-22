@@ -3,8 +3,8 @@
 // user_metadata NO se usa porque el propio usuario puede editarlo.
 export type PlanId = 'basic' | 'pro' | 'pro_plus'
 const RANK: Record<PlanId, number> = { basic: 0, pro: 1, pro_plus: 2 }
-const NAME: Record<PlanId, string> = { basic: 'Básico', pro: 'PRO', pro_plus: 'PRO PLUS' }
-const OWNERS = ['ronieldaboinchile@gmail.com'] // dueño: PRO PLUS (igual que ASSIGNED en plans.js)
+const NAME: Record<PlanId, string> = { basic: 'Básico', pro: 'PRO', pro_plus: 'Premium' }
+const OWNERS = ['ronieldaboinchile@gmail.com'] // dueño: Premium (igual que ASSIGNED en plans.js)
 
 export const PLATFORMS_BY_PLAN: Record<PlanId, string[]> = {
   basic: ['instagram', 'facebook', 'twitter'],
@@ -40,8 +40,8 @@ function planFromJwt(req: Request): PlanId {
   } catch { return 'basic' }
 }
 
-/** Devuelve un mensaje de error si el plan del usuario no llega al mínimo (1 = PRO, 2 = PRO PLUS); null si puede seguir. */
+/** Devuelve un mensaje de error si el plan del usuario no llega al mínimo (1 = PRO, 2 = Premium); null si puede seguir. */
 export function requirePlan(req: Request, min: 1 | 2): string | null {
   const plan = planFromJwt(req)
-  return RANK[plan] >= min ? null : `Esta función está disponible desde el plan ${min === 1 ? 'PRO' : 'PRO PLUS'} (tu plan: ${NAME[plan]}).`
+  return RANK[plan] >= min ? null : `Esta función está disponible desde el plan ${min === 1 ? 'PRO' : 'Premium'} (tu plan: ${NAME[plan]}).`
 }

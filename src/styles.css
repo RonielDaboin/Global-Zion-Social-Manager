@@ -1979,7 +1979,7 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .canvas-wrap canvas.vtext-ov.pannable:active { cursor: grabbing; }
 .pan-hint { font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 10px; background: color-mix(in srgb, #9b5cff 14%, transparent); border: 1px solid color-mix(in srgb, #9b5cff 35%, transparent); }
 
-/* ===== Planes (Básico · PRO · PRO PLUS) ===== */
+/* ===== Planes (Básico · PRO · Premium) ===== */
 .modal-bg.plans-bg { z-index: 80; align-items: start; place-items: start center; }
 .plans { position: relative; width: min(1040px, 100%); margin: auto; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 28px; display: grid; gap: 14px; box-shadow: 0 30px 80px -20px #000a; text-align: left; }
 .plans h2 { margin: 0; font-size: 26px; padding-right: 40px; }

@@ -393,7 +393,7 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose, canR
   }
 
   const removeBg = async () => {
-    if (!canRemoveBg) return onLocked(t('Quitar el fondo está disponible en el plan PRO PLUS.'))
+    if (!canRemoveBg) return onLocked(t('Quitar el fondo está disponible en el plan Premium.'))
     setErr(''); setPct(0); setBusy('bg')
     try {
       const { removeBackground } = await import('@imgly/background-removal')
@@ -407,7 +407,7 @@ export default function ImageWorkshop({ image, ratioHint, onApply, onClose, canR
   }
 
   const upscale = async (factor) => {
-    if (!canUpscale) return onLocked(t('Ampliar imágenes está disponible en el plan PRO PLUS.'))
+    if (!canUpscale) return onLocked(t('Ampliar imágenes está disponible en el plan Premium.'))
     setErr(''); setBusy('up')
     await new Promise((r) => setTimeout(r, 30)) // deja pintar el aviso antes del cálculo pesado
     try {

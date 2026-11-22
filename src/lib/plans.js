@@ -1,4 +1,4 @@
-// Planes y roles del servicio: Básico, PRO y PRO PLUS.
+// Planes y roles del servicio: Básico, PRO y Premium.
 // OJO: esto es lo que ve y puede usar el usuario en la interfaz. El plan real debe guardarse en el servidor
 // (app_metadata de Supabase) porque user_metadata lo puede editar el propio usuario. Las funciones de Supabase
 // (supabase/functions/_shared/plan.ts) repiten estas reglas para que no se puedan saltar desde el navegador.
@@ -29,7 +29,7 @@ export const LIMITS = {
   },
 }
 
-// Movimientos de la sección Animación incluidos en PRO (PRO PLUS tiene todos)
+// Movimientos de la sección Animación incluidos en PRO (Premium tiene todos)
 export const PRO_ANIM_MOTIONS = ['zoomin', 'zoomout', 'panl', 'panr', 'pulse', 'none']
 
 export const PLANS = {
@@ -42,7 +42,7 @@ export const PLANS = {
     perks: ['+ TikTok, LinkedIn, YouTube y Correo', 'Hasta 6 cuentas conectadas', 'Programar hasta 30 publicaciones al mes y calendario', '15 plantillas, stickers y varios formatos a la vez', 'Editor de video (hasta 100 MB) y recorte de imagen', 'Animación con música (hasta 30 s y 6 movimientos)', 'Textos con IA (20 al día)'],
   },
   pro_plus: {
-    id: 'pro_plus', name: 'PRO PLUS', tone: 'gold', rank: 2, tagline: 'Todo incluido, sin límites',
+    id: 'pro_plus', name: 'Premium', tone: 'gold', rank: 2, tagline: 'Todo incluido, sin límites',
     perks: ['Todas las redes, incluido WhatsApp', 'Cuentas y programación sin límite', 'Imágenes con IA y publicación automática con IA', 'Quitar fondo y ampliar imágenes', 'Editor de video completo (hasta 500 MB)', 'Animación con música: 21 movimientos y hasta 60 s', 'Textos con IA (100 al día) y soporte prioritario'],
   },
 }
@@ -69,7 +69,7 @@ export const paypalReady = !!(PAYPAL.clientId && PAYPAL.plans.basic && PAYPAL.pl
 export const TRIAL_DAYS = 15
 const PAYWALL_START = Date.parse('2026-11-21T00:00:00Z')
 
-// Filas de la tabla comparativa: [etiqueta, valor Básico, valor PRO, valor PRO PLUS]  (true/false = ✓/—)
+// Filas de la tabla comparativa: [etiqueta, valor Básico, valor PRO, valor Premium]  (true/false = ✓/—)
 export const COMPARE = [
   ['Redes sociales', 'Instagram, Facebook, X', '+ TikTok, LinkedIn, YouTube, Correo', '+ WhatsApp y WhatsApp Business'],
   ['Cuentas conectadas', '2', '6', 'Sin límite'],

@@ -127,7 +127,7 @@ export default function Login() {
         <div className="net-pills">
           {Object.values(PLATFORMS).map((p) => <span key={p.id} style={{ '--pc': p.color }}><NetIcon id={p.id} />{p.name}</span>)}
         </div>
-        <button type="button" className="btn primary hero-plans" onClick={() => openPlans()}><Icon name="crown" size={16} /> {t('Ver planes: Básico, PRO y PRO PLUS')}</button>
+        <button type="button" className="btn primary hero-plans" onClick={() => openPlans()}><Icon name="crown" size={16} /> {t('Ver planes: Básico, PRO y Premium')}</button>
       </div>
       <form className="auth-card" onSubmit={submit}>
         <h2>{mode === 'login' ? t('Iniciar sesión') : t('Crear cuenta')}</h2>

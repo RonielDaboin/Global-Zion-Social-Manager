@@ -350,7 +350,7 @@ export default function ImageEditor({ design, setDesign }) {
   }
   const aiGenerate = async () => {
     if (!aiPrompt.trim() || aiBusy) return
-    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan PRO PLUS.'))
+    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan Premium.'))
     setAiBusy(true); setAiErr('')
     try {
       const url = await generateImageAI({ prompt: aiPrompt.trim(), aspectRatio: nearestRatio(fmt.w / fmt.h) })
@@ -365,7 +365,7 @@ export default function ImageEditor({ design, setDesign }) {
   // aplica las indicaciones de mejora y repite hasta 3 veces si la calidad no es buena.
   const aiRegen = async () => {
     if (aiBusy) return
-    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan PRO PLUS.'))
+    if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan Premium.'))
     setAiBusy(true); setAiErr('')
     try {
       const titles = design.layers.filter((l) => !l.bg && l.text.trim()).slice(0, 2).map((l) => l.text.replace(/\n/g, ' ')).join(' - ')
@@ -466,7 +466,7 @@ export default function ImageEditor({ design, setDesign }) {
 
         <section>
           <h4>🧩 {t('Plantillas')}</h4>
-          <TemplateChips onPick={applyTemplate} limit={lim.templates} onLocked={() => openPlans(t('Tu plan {a} incluye {n} plantillas. Todas las plantillas están en el plan PRO PLUS.', { a: access.plan.name, n: lim.templates }))} />
+          <TemplateChips onPick={applyTemplate} limit={lim.templates} onLocked={() => openPlans(t('Tu plan {a} incluye {n} plantillas. Todas las plantillas están en el plan Premium.', { a: access.plan.name, n: lim.templates }))} />
         </section>
 
         <section>
@@ -573,7 +573,7 @@ export default function ImageEditor({ design, setDesign }) {
             placeholder={t('Describe la imagen que quieres generar…')} />
           <div className="row">
             <button className="btn sm" disabled={aiBusy || !aiPrompt.trim()} onClick={aiGenerate}>
-              {aiBusy ? t('Generando…') : t('Generar')}{!lim.aiImage && <LockTag plan="PLUS" />}
+              {aiBusy ? t('Generando…') : t('Generar')}{!lim.aiImage && <LockTag plan="PREMIUM" />}
             </button>
           </div>
           {aiErr && <p className="hint" style={{ color: 'var(--danger, #ff5d73)' }}>{aiErr}</p>}

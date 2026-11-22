@@ -144,7 +144,7 @@ export default function MusicStudio({ design, lim, onLocked, onCreated, notify, 
       {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')} · {t('Animación')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
       {!cine && <h3 className="sub">🎞️ {t('Animación')} <em className="ms-opt">{t('(opcional)')}</em></h3>}
       {!cine && <p className="muted small">{t('Anima tu imagen y ponle música: elige el movimiento y el visualizador de barras. Usa solo música de tu propiedad o libre de derechos.')}</p>}
-      {allowed && !lim.animAllMotions && <p className="hint ms-plan" style={{ textAlign: 'left', justifyContent: 'flex-start' }}>🔒 {t('Tu plan incluye 6 movimientos y hasta {n} s. Todos los movimientos y hasta 60 s están en PRO PLUS.', { n: lim.animMaxSec })}</p>}
+      {allowed && !lim.animAllMotions && <p className="hint ms-plan" style={{ textAlign: 'left', justifyContent: 'flex-start' }}>🔒 {t('Tu plan incluye 6 movimientos y hasta {n} s. Todos los movimientos y hasta 60 s están en Premium.', { n: lim.animMaxSec })}</p>}
       {!supported && <p className="warn">⚠️ {t('Este navegador no puede crear videos. Prueba con Chrome o Edge.')}</p>}
       <div className={cine ? 'ms-cgrid' : 'ms-grid'}>
         <div className={cine ? 'stage ms-cstage' : 'ms-stage'}>
@@ -162,7 +162,7 @@ export default function MusicStudio({ design, lim, onLocked, onCreated, notify, 
               <small>{t(g.label)}</small>
               <div className="ms-motions">
                 {g.items.map((m) => (
-                  <button key={m.id} type="button" disabled={lock} className={'chip' + (motion === m.id ? ' on' : '') + (motionOk(m.id) ? '' : ' locked')} onClick={() => (motionOk(m.id) ? setMotion(m.id) : onLocked(t('Este movimiento está disponible en el plan PRO PLUS.')))}>{motionOk(m.id) ? m.ico : '🔒'} {t(m.label)}</button>
+                  <button key={m.id} type="button" disabled={lock} className={'chip' + (motion === m.id ? ' on' : '') + (motionOk(m.id) ? '' : ' locked')} onClick={() => (motionOk(m.id) ? setMotion(m.id) : onLocked(t('Este movimiento está disponible en el plan Premium.')))}>{motionOk(m.id) ? m.ico : '🔒'} {t(m.label)}</button>
                 ))}
               </div>
             </div>
