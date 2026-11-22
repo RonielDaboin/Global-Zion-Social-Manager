@@ -2155,3 +2155,128 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .bg-badge img { width: 112px; height: 112px; display: block; }
 .post:hover .bg-by { opacity: .48; }
 @media (max-width: 600px) { .bg-badge { padding: 10px; border-radius: 26px; } .bg-badge img { width: 84px; height: 84px; } }
+
+/* =====================================================================
+   RESPONSIVE v2: tablets, móvil en horizontal, táctil, pantallas grandes
+   y teléfonos muy pequeños (320px). Va al final para tener la última palabra.
+   ===================================================================== */
+html { -webkit-tap-highlight-color: transparent; }
+button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file { touch-action: manipulation; }
+.cap, .pbody, .card p, .note p, .uinfo, .toast { overflow-wrap: break-word; }
+
+/* Unidades dinámicas: la barra del navegador móvil ya no tapa contenido */
+@supports (height: 100dvh) {
+  .side { height: 100dvh; }
+  .legal { min-height: 100dvh; }
+  .ws-frame { max-height: 62dvh; }
+  .sim-media { max-height: 50dvh; }
+}
+.side { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+
+/* Escritorio compacto / tablet horizontal (901–1100px): barra lateral más angosta */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .shell { grid-template-columns: 216px minmax(0, 1fr); }
+  .side { padding-left: 10px; padding-right: 10px; }
+  .main { padding: 24px 20px; }
+  .editor { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 18px; }
+  .gen { grid-template-columns: 1fr 130px auto auto; }
+}
+
+/* Tablet vertical (641–900px): aprovecha el ancho, navegación inferior más cómoda */
+@media (min-width: 641px) and (max-width: 900px) {
+  .main { padding: 22px max(22px, env(safe-area-inset-right)) 22px max(22px, env(safe-area-inset-left)); }
+  .stats { grid-template-columns: repeat(4, 1fr); }
+  .gen { grid-template-columns: 1fr 140px auto auto; }
+  .nav { flex-direction: row; justify-content: center; gap: 8px; font-size: 13px; padding: 8px 4px; }
+  .nav svg { width: 30px; height: 28px; }
+  .canvas-wrap { max-width: 420px; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .toast { left: auto; right: 20px; max-width: 420px; }
+  .auth-card { margin-top: 8px; }
+}
+
+/* Etiquetas de la barra inferior: nunca desbordan, se recortan con … */
+@media (max-width: 900px) {
+  .side nav { min-width: 0; }
+  .nav { min-width: 0; overflow: hidden; }
+  .nav span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .main { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+}
+@media (max-width: 640px) {
+  .main { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+}
+
+/* Móvil en horizontal (pantalla baja): la barra lateral/inferior ocupa poco */
+@media (max-height: 540px) and (orientation: landscape) {
+  .side { padding-top: 10px; padding-bottom: 8px; gap: 10px; }
+  .side nav { gap: 2px; }
+  .nav { padding: 6px 10px; }
+  .nav svg { width: 28px; height: 28px; padding: 6px; }
+  .side .user { padding: 6px; }
+  .main { padding-top: 14px; padding-bottom: 14px; }
+  .auth-hero { padding-top: 56px; gap: 12px; }
+  .auth-card { margin-top: 12px; margin-bottom: 12px; }
+  .ph h1 { font-size: 22px; }
+  .canvas-wrap { max-height: 60dvh; }
+  .lightbox { padding: 8px; }
+}
+@media (max-width: 900px) and (max-height: 540px) and (orientation: landscape) {
+  .shell { padding-bottom: calc(52px + env(safe-area-inset-bottom)); }
+  .nav { flex-direction: row; gap: 6px; padding: 4px 2px; font-size: 11px; }
+  .nav svg { width: 24px; height: 24px; padding: 4px; }
+  .mbar { margin-bottom: 8px; }
+  .toast { bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .editor.cine { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); padding: 52px 12px 8px; }
+}
+
+/* Pantallas táctiles: objetivos de toque de 44px y sin efectos hover pegados */
+@media (pointer: coarse) {
+  .btn, .chip, .seg button, .icon-btn, .nav { min-height: 44px; }
+  .btn.sm { min-height: 40px; }
+  .icon-btn { min-width: 40px; }
+  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
+  .check, .plat { min-height: 44px; }
+  .wp-day { min-height: 38px; } .wp-col button { min-height: 40px; }
+  .bg-presets button { width: 42px; height: 42px; }
+  .ws-h { width: 26px; height: 26px; }
+  .ws-h.nw { left: -13px; top: -13px; } .ws-h.ne { right: -13px; top: -13px; }
+  .ws-h.sw { left: -13px; bottom: -13px; } .ws-h.se { right: -13px; bottom: -13px; }
+}
+@media (hover: none) {
+  .bg-presets button:hover, .wp-day:hover:not(:disabled):not(.on), .wp-nav:hover, .nav:hover svg { transform: none; }
+}
+
+/* Pantallas grandes: más aire y contenido más ancho */
+@media (min-width: 1500px) {
+  .shell { grid-template-columns: 270px minmax(0, 1fr); }
+  .main { padding: 36px 44px; }
+  .page { max-width: 1280px; }
+  .post-grid { grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr)); }
+}
+@media (min-width: 1900px) {
+  body { font-size: 16px; }
+  .shell { grid-template-columns: 290px minmax(0, 1fr); }
+  .page { max-width: 1480px; }
+  .modal { width: min(460px, 100%); }
+}
+
+/* Teléfonos muy pequeños (≤360px, p. ej. 320px) y plegables cerrados */
+@media (max-width: 360px) {
+  .main { padding-top: 10px; padding-bottom: 10px; }
+  .ph h1 { font-size: 21px; }
+  .card { padding: 12px; }
+  .modal { padding: 16px; border-radius: 16px; }
+  .auth-card { padding: 18px; width: calc(100% - 16px); }
+  .btn { padding-left: 12px; padding-right: 12px; }
+  .nav { font-size: 9.5px; }
+  .row { gap: 8px; }
+  .hero { padding: 16px; } .hero-txt h1 { font-size: 22px; }
+  .cal-h { font-size: 10px; }
+  .pf-kpis { grid-template-columns: repeat(2, 1fr); }
+  .wp { max-width: calc(100vw - 12px); }
+  .wp.sheet { grid-template-columns: 1fr 92px; }
+}
+@media (max-width: 320px) {
+  .mbar-act { gap: 3px; } .mbar-act .seg.lang button { padding: 6px 7px; }
+  .stats, .kpis { grid-template-columns: 1fr; }
+}
