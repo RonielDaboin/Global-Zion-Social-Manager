@@ -40,7 +40,7 @@ export function PostCard({ p, edit }) {
             <button className="btn ghost" onClick={() => setAsking(false)}>{t('Cancelar')}</button>
           </div>
         </div>, document.body)}
-      {p.author && <span className="bg-by" aria-hidden="true"><Avatar session={{ name: p.author.name || '?', picture: p.author.picture || (session?.email === p.author.email ? session.picture : null) }} mode="photo" size={52} /></span>}
+      <span className="bg-by" aria-hidden="true"><span className="bg-badge"><img src="/logo.webp" alt="" /></span></span>
       <div className="thumb"><img src={p.image} alt="" />{p.mediaType === 'video' && <span className="vbadge">▶ {t('Video')}</span>}</div>
       <div className="pbody">
         <div className="row between">

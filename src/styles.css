@@ -2141,19 +2141,17 @@ html.theming *, html.theming *::before, html.theming *::after { transition: back
 .by { display: flex; align-items: center; gap: 6px; }
 .by .avatar { box-shadow: none; font-size: 11px; }
 
-/* Marca de agua de Global Zion en el fondo de la tarjeta de publicación: tenue, abajo a la derecha */
+/* Fondo de la tarjeta: logo de colores de la barra lateral (placa blanca con halo de colores), desvaneciéndose hacia la izquierda */
 .post { position: relative; overflow: hidden; isolation: isolate; }
-.post::before {
-  content: ''; position: absolute; right: -22px; bottom: -26px; width: 170px; height: 170px; z-index: -1; pointer-events: none;
-  background: url('/logo.webp') center / contain no-repeat; opacity: .09; filter: saturate(1.1);
-  -webkit-mask-image: radial-gradient(circle at 60% 60%, #000 35%, transparent 75%); mask-image: radial-gradient(circle at 60% 60%, #000 35%, transparent 75%);
-  transition: opacity .3s, transform .3s;
+.bg-by {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 55%; z-index: -1; pointer-events: none;
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 18px; opacity: .3; transition: opacity .35s;
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 30%, transparent 95%); mask-image: linear-gradient(to left, #000 0%, #000 30%, transparent 95%);
 }
-.post:hover::before { opacity: .16; transform: scale(1.05) rotate(-3deg); }
-@media (max-width: 600px) { .post::before { width: 130px; height: 130px; right: -18px; bottom: -20px; } }
-
-/* Foto del autor en el fondo de la tarjeta, junto a la marca de agua */
-.bg-by { position: absolute; right: 118px; bottom: 14px; z-index: -1; pointer-events: none; opacity: .28; transition: opacity .3s; }
-.bg-by .avatar { box-shadow: 0 0 0 2px var(--card), 0 0 0 3px var(--line), 0 8px 20px -8px #000a; }
-.post:hover .bg-by { opacity: .6; }
-@media (max-width: 600px) { .bg-by { right: 92px; bottom: 12px; } .bg-by .avatar { width: 42px !important; height: 42px !important; } }
+.bg-badge { position: relative; z-index: 0; display: grid; place-items: center; padding: 14px; border-radius: 34px;
+  background: linear-gradient(145deg, #fff, #dcebfa); box-shadow: 0 0 0 3px #0b1226, 0 0 0 5px #ffffffd0; }
+.bg-badge::after { content: ''; position: absolute; inset: -16px; border-radius: 48px; z-index: -1; filter: blur(16px); opacity: .85;
+  background: conic-gradient(from 0deg, #f58529, #dd2a7b, #8134af, #25f4ee, #f58529); }
+.bg-badge img { width: 112px; height: 112px; display: block; }
+.post:hover .bg-by { opacity: .48; }
+@media (max-width: 600px) { .bg-badge { padding: 10px; border-radius: 26px; } .bg-badge img { width: 84px; height: 84px; } }
