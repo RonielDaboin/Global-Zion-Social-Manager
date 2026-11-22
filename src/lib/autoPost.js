@@ -178,7 +178,7 @@ function decorLayers(accent, glyph) {
 export async function photoVariant(base, { prompt, context, info, onStep = () => {} }) {
   let good = null, why = []
   try {
-    for (let i = 0; i < 3 && !good; i++) {
+    for (let i = 0; i < 2 && !good; i++) {
       onStep(t('Creando la imagen con IA…'))
       const raw = await generateImageAI({ prompt, aspectRatio: '1:1' })
       onStep(t('Revisando la calidad de la imagen…'))
@@ -254,7 +254,10 @@ export async function generateAutoPost({ text = '', platforms, withImage, onStep
   let options = null
   if (withImage) {
     const info = { kicker, title, points: c.points, link, glyph: GLYPH[c.angle.id] || '🌐', prompt: userText || c.title, scene: c.scene, palette: palette.id, hue: palette.hue }
-    const r = await photoVariant(baseDesign, { prompt, context, info, onStep })
+    // Plazo total: si la imagen de IA se demora, se sigue con la opción B en vez de dejar todo cargando
+    let timer
+    const late = new Promise((res) => { timer = setTimeout(() => res({ design: null, why: [t('la imagen de IA tardó demasiado')] }), 150000) })
+    const r = await Promise.race([photoVariant(baseDesign, { prompt, context, info, onStep }), late]).finally(() => clearTimeout(timer))
     options = { photo: r.design, why: r.why, base: baseDesign, prompt, context, info }
   }
   design = toolsDesign

@@ -103,7 +103,7 @@ export default function AutoPost({ onClose, onGenerated }) {
             <div className={'pick-card' + (curA ? '' : ' off')}>
               <span className="pick-tag">A · {t('Fondo con imagen de IA')}</span>
               <div className="pick-img">
-                {retry ? <span className="ws-spin" style={SPIN} />
+                {retry ? <><span className="ws-spin" style={SPIN} /><p className="hint">{t('Creando otra imagen, puede tardar hasta 1–2 minutos…')}</p></>
                   : curA ? <img src={curA.url} alt="" />
                   : <p className="hint">{t('No se obtuvo una imagen de buena calidad ({r}).', { r: why })}</p>}
               </div>
@@ -137,6 +137,7 @@ export default function AutoPost({ onClose, onGenerated }) {
           {t('Comparar también con un fondo de imagen de IA')}
         </label>
         {busy && <div className="auto-step"><span className="ws-spin" style={{ borderColor: 'var(--line)', borderTopColor: 'var(--violet, #7c3aed)' }} /> {step}</div>}
+        {busy && <p className="hint">{withImage ? t('Con imagen de IA puede tardar 1–2 minutos. No cierres esta ventana.') : t('Puede tardar unos segundos. No cierres esta ventana.')}</p>}
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost" disabled={busy} onClick={onClose}>{t('Cancelar')}</button>
           <button className="btn primary" disabled={busy} onClick={run}>✨ {text.trim() ? t('Generar publicación') : t('Sorpréndeme')}</button>

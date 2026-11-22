@@ -4,12 +4,12 @@ import PostPreview from './PostPreview.jsx'
 import { socialCall } from '../lib/social.js'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
-import { Icon, PlatformBadge, StatusTag, fmtDate } from './ui.jsx'
+import { Avatar, Icon, PlatformBadge, StatusTag, fmtDate } from './ui.jsx'
 
 export function PostCard({ p, edit }) {
   const [open, setOpen] = useState(false)
   const [asking, setAsking] = useState(false)
-  const { deletePost, publishNow, notify } = useApp()
+  const { deletePost, publishNow, notify, session } = useApp()
   useLang()
   const canPublish = ['draft', 'scheduled', 'failed'].includes(p.status)
   const onIg = p.status === 'published' && p.platforms.includes('instagram') && p.results?.instagram?.ok && !p.results.instagram.demo
@@ -40,6 +40,7 @@ export function PostCard({ p, edit }) {
             <button className="btn ghost" onClick={() => setAsking(false)}>{t('Cancelar')}</button>
           </div>
         </div>, document.body)}
+      {p.author && <span className="bg-by" aria-hidden="true"><Avatar session={{ name: p.author.name || '?', picture: p.author.picture || (session?.email === p.author.email ? session.picture : null) }} mode="photo" size={52} /></span>}
       <div className="thumb"><img src={p.image} alt="" />{p.mediaType === 'video' && <span className="vbadge">▶ {t('Video')}</span>}</div>
       <div className="pbody">
         <div className="row between">
@@ -52,7 +53,12 @@ export function PostCard({ p, edit }) {
           {p.status === 'published' && <>✅ {fmtDate(p.publishedAt)}</>}
           {(p.status === 'draft' || p.status === 'failed') && <>{t('Creada')} {fmtDate(p.createdAt)}</>}
         </small>
-        {p.author && <small className="muted" title={p.author.email}>👤 {t('Creada por')} {p.author.name}{p.publishedBy && p.publishedBy.email !== p.author.email ? ` · ${t('publicada por')} ${p.publishedBy.name}` : ''}</small>}
+        {p.author && (
+          <small className="muted by" title={p.author.email}>
+            <Avatar session={{ name: p.author.name || '?', picture: p.author.picture || (session?.email === p.author.email ? session.picture : null) }} mode="photo" size={20} />
+            {t('Creada por')} {p.author.name}{p.publishedBy && p.publishedBy.email !== p.author.email ? ` · ${t('publicada por')} ${p.publishedBy.name}` : ''}
+          </small>
+        )}
         <div className="row pact" onClick={(e) => e.stopPropagation()}>
           {canPublish && <button className="btn primary sm" onClick={() => publishNow(p.id)}><Icon name="send" size={14} /> {t('Publicar')}</button>}
           {p.status !== 'published' && p.status !== 'publishing' && <button className="btn ghost sm" onClick={() => edit(p)}><Icon name="edit" size={14} /> {t('Editar')}</button>}

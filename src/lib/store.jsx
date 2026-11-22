@@ -190,7 +190,7 @@ export function AppProvider({ children }) {
   }, [session])
 
   // ---- Publicaciones ----
-  const me = session ? { name: session.name, email: session.email } : null
+  const me = session ? { name: session.name, email: session.email, picture: session.picture || null } : null
   const savePost = (p0) => {
     const p = p0.author || !me ? p0 : { ...p0, author: me } // quién creó la publicación
     setPosts((list) => {

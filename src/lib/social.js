@@ -234,11 +234,16 @@ export function shrinkImage(dataUrl, max = 768) {
   })
 }
 
+/** Llama a una Edge Function con un tiempo máximo: si el servidor se cuelga, falla en vez de quedar cargando para siempre. */
+export function invokeFn(name, body, ms = 45000) {
+  let timer
+  const limit = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(t('La IA tardó demasiado en responder. Intenta de nuevo.'))), ms) })
+  return Promise.race([supabase.functions.invoke(name, { body }), limit]).finally(() => clearTimeout(timer))
+}
+
 /** Genera el texto con Gemini a través de la Edge Function `generate-caption` (la API key nunca está en el navegador). */
 export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags, mediaType, image, frames }) {
-  const { data, error } = await supabase.functions.invoke('generate-caption', {
-    body: { topic, tone, networks, maxLen, maxTags, mediaType, image, frames, lang: getLang() },
-  })
+  const { data, error } = await invokeFn('generate-caption', { topic, tone, networks, maxLen, maxTags, mediaType, image, frames, lang: getLang() }, 45000)
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
@@ -252,9 +257,7 @@ export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags
 
 /** Escribe los textos del diseño (uno por capa activa, en orden) con Gemini vía `generate-texts`. */
 export async function generateLayerTextsAI({ layers, topic }) {
-  const { data, error } = await supabase.functions.invoke('generate-texts', {
-    body: { layers: layers.map((l) => ({ text: l.text, size: l.size, y: l.y })), topic, lang: getLang() },
-  })
+  const { data, error } = await invokeFn('generate-texts', { layers: layers.map((l) => ({ text: l.text, size: l.size, y: l.y })), topic, lang: getLang() }, 25000)
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
@@ -268,7 +271,7 @@ export async function generateLayerTextsAI({ layers, topic }) {
 
 /** Genera o edita una imagen con Gemini vía la Edge Function `generate-image`. Devuelve un dataURL. */
 export async function generateImageAI({ prompt, aspectRatio, image }) {
-  const { data, error } = await supabase.functions.invoke('generate-image', { body: { prompt, aspectRatio, image } })
+  const { data, error } = await invokeFn('generate-image', { prompt, aspectRatio, image }, 100000)
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
