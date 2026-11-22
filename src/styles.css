@@ -2166,7 +2166,7 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 
 /* Unidades dinámicas: la barra del navegador móvil ya no tapa contenido */
 @supports (height: 100dvh) {
-  .side { height: 100dvh; }
+  @media (min-width: 901px) { .side { height: 100dvh; } }
   .legal { min-height: 100dvh; }
   .ws-frame { max-height: 62dvh; }
   .sim-media { max-height: 50dvh; }
