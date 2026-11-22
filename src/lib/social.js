@@ -29,22 +29,65 @@ export async function socialCall(action, body = {}) {
 /** { configured: {instagram, facebook, email}, accounts: [...] } o null si el servidor no responde. */
 export const fetchSocial = () => socialCall('list').catch(() => null)
 
+const POPUP = 'gz_oauth'
+const oauthChannel = () => (typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('gz_oauth'))
+const isPopup = () => window.name === POPUP
+
+/** Abre el login de la red en una ventana aparte para no perder la app; si el navegador la bloquea, redirige esta pestaña. */
 export async function startRealOAuth(platform) {
-  const { url, state } = await socialCall('auth-url', { platform, redirectUri: window.location.origin + '/' })
-  sessionStorage.setItem('gz_oauth_state', state)
-  window.location.href = url
+  // Se abre en el mismo gesto del clic (si no, el navegador la bloquea) y se rellena cuando el servidor responde
+  const w = 520, h = 720
+  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - w) / 2))
+  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - h) / 2))
+  const win = window.open('about:blank', POPUP, `popup=yes,width=${w},height=${h},left=${left},top=${top}`)
+  try {
+    const { url, state } = await socialCall('auth-url', { platform, redirectUri: window.location.origin + '/' })
+    // localStorage (no sessionStorage) para que la ventana emergente pueda validar el estado
+    localStorage.setItem('gz_oauth_state', state)
+    if (win && !win.closed) { win.location.href = url; win.focus() } else window.location.href = url
+  } catch (e) {
+    win?.close()
+    throw e
+  }
 }
 
-/** Si volvemos de OAuth con ?code=, lo canjeamos en el servidor. */
+/** Si volvemos de OAuth con ?code=, lo canjeamos en el servidor. En la ventana emergente avisa a la app y se cierra. */
 export async function handleOAuthCallback() {
   const q = new URLSearchParams(window.location.search)
   const code = q.get('code'), state = q.get('state')
+  const popup = isPopup()
+  const done = (msg) => {
+    if (!popup) return
+    const ch = oauthChannel()
+    ch?.postMessage(msg)
+    setTimeout(() => { ch?.close(); window.close() }, 300)
+  }
+  if (popup && q.get('error') && !code) { // el usuario canceló o la red rechazó la autorización
+    localStorage.removeItem('gz_oauth_state')
+    done({ error: q.get('error_description') || q.get('error') })
+    return null
+  }
   if (!code || !state) return null
-  if (state !== sessionStorage.getItem('gz_oauth_state')) return null
-  sessionStorage.removeItem('gz_oauth_state')
+  if (state !== (localStorage.getItem('gz_oauth_state') || sessionStorage.getItem('gz_oauth_state'))) return null
+  localStorage.removeItem('gz_oauth_state'); sessionStorage.removeItem('gz_oauth_state')
   window.history.replaceState({}, '', '/' + window.location.hash)
-  const data = await socialCall('callback', { code, state, redirectUri: window.location.origin + '/' })
-  return { real: true, ...data }
+  try {
+    const data = await socialCall('callback', { code, state, redirectUri: window.location.origin + '/' })
+    const r = { real: true, ...data }
+    if (popup) { done({ ok: true, ...r }); return null } // la app original recibe el resultado
+    return r
+  } catch (e) {
+    if (popup) { done({ error: e.message }); return null }
+    throw e
+  }
+}
+
+/** La app original escucha el resultado que envía la ventana emergente. Devuelve la función para dejar de escuchar. */
+export function onOAuthResult(cb) {
+  const ch = oauthChannel()
+  if (!ch) return () => {}
+  ch.onmessage = (ev) => cb(ev.data || {})
+  return () => ch.close()
 }
 
 /** Sube la imagen/video a Storage (bucket público) para que Instagram/Facebook puedan descargarlos. */

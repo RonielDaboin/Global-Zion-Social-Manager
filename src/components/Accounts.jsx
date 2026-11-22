@@ -34,7 +34,8 @@ export default function Accounts() {
   const [step, setStep] = useState(0)
   const [prov, setProv] = useState('gmail')
 
-  const realOAuth = (p) => startRealOAuth(p).catch((e) => { notify(e.message, 'err'); setModal(null) })
+  // El login se abre en una ventana aparte: la app queda como está y se cierra el modal de espera
+  const realOAuth = (p) => startRealOAuth(p).then(() => setModal(null)).catch((e) => { notify(e.message, 'err'); setModal(null) })
   const isReal = (p) => Boolean(social.configured[p])
   const realEmail = modal === 'email' && prov === 'gmail' && isReal('email') // Gmail: OAuth de Google
   const open = (p) => {

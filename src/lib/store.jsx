@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
-import { publishPost, cleanupPostMedia, handleOAuthCallback, fetchSocial, socialCall } from './social.js'
+import { publishPost, cleanupPostMedia, handleOAuthCallback, onOAuthResult, fetchSocial, socialCall } from './social.js'
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
@@ -169,6 +169,17 @@ export function AppProvider({ children }) {
   }
 
   useEffect(() => { if (session) cleanupPostMedia() }, [session?.id]) // eslint-disable-line
+
+  // Resultado de la ventana emergente de inicio de sesión (la app original no se recarga)
+  useEffect(() => {
+    if (window.name === 'gz_oauth') return undefined // la propia ventana emergente no escucha
+    return onOAuthResult((r) => {
+      if (r.error) { notify(r.error, 'err'); return }
+      connectAccount(r.platform, { ...r, accountId: r.username })
+      notify(t('Cuenta de {p} conectada', { p: r.platform }))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!session) return
