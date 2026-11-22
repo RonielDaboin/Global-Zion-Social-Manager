@@ -4,6 +4,7 @@
 // Secretos necesarios (solo las redes que quieras activar):
 //   supabase secrets set META_APP_ID=... META_APP_SECRET=...            # Instagram + Facebook
 //   supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...  # Gmail
+//   supabase secrets set TIKTOK_CLIENT_KEY=... TIKTOK_CLIENT_SECRET=... # TikTok
 //   supabase functions deploy social --project-ref bknwnurzxaxtkgnrriva
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { planOfUser, trialExpired, PLATFORMS_BY_PLAN, MAX_ACCOUNTS } from '../_shared/plan.ts'
@@ -26,11 +27,14 @@ const META = { id: env('META_APP_ID'), secret: env('META_APP_SECRET') }
 // ID de la configuración de Facebook Login for Business (no es secreto)
 const META_CONFIG_ID = env('META_CONFIG_ID') || '1127819070150160'
 const GOOGLE = { id: env('GOOGLE_CLIENT_ID'), secret: env('GOOGLE_CLIENT_SECRET') }
+const TIKTOK = { id: env('TIKTOK_CLIENT_KEY'), secret: env('TIKTOK_CLIENT_SECRET') }
 const configured = {
   instagram: Boolean(META.id && META.secret),
   facebook: Boolean(META.id && META.secret),
   email: Boolean(GOOGLE.id && GOOGLE.secret),
+  tiktok: Boolean(TIKTOK.id && TIKTOK.secret),
 }
+const TT = 'https://open.tiktokapis.com/v2'
 const SCOPES: Record<string, string> = {
   facebook: 'pages_show_list,pages_manage_posts,pages_read_engagement',
   instagram: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish',
@@ -82,6 +86,12 @@ function authUrl(platform: string, redirectUri: string, state: string) {
       client_id: GOOGLE.id, redirect_uri: redirectUri, response_type: 'code', state,
       scope: 'openid email profile https://www.googleapis.com/auth/gmail.send',
       access_type: 'offline', prompt: 'consent select_account',
+    })
+  }
+  if (platform === 'tiktok') {
+    return 'https://www.tiktok.com/v2/auth/authorize/?' + qs({
+      client_key: TIKTOK.id, redirect_uri: redirectUri, response_type: 'code', state,
+      scope: 'user.info.basic,video.publish,video.upload',
     })
   }
   // Facebook Login for Business: usa una "configuración" (config_id) en lugar de scope.
@@ -170,6 +180,47 @@ async function connectGoogle(uid: string, code: string, redirectUri: string) {
   return { username: me.email, name: me.name || me.email, avatar: me.picture || null, provider: 'gmail' }
 }
 
+// TikTok responde { data, error: { code: 'ok' | ... , message } }
+const ttJson = async (url: string, init?: RequestInit) => {
+  const r = await fetch(url, init)
+  const d = await r.json().catch(() => ({}))
+  const code = d.error?.code
+  if (!r.ok || (code && code !== 'ok') || d.error_description) {
+    throw new HttpError(502, d.error?.message || d.error_description || `TikTok: error ${r.status}`)
+  }
+  return d
+}
+
+async function connectTikTok(uid: string, code: string, redirectUri: string) {
+  const tok = await ttJson(`${TT}/oauth/token/`, {
+    method: 'POST', headers: FORM,
+    body: qs({ client_key: TIKTOK.id, client_secret: TIKTOK.secret, code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
+  })
+  if (!tok.access_token) throw new HttpError(400, 'TikTok no devolvió un token; vuelve a autorizar')
+  const me = await ttJson(`${TT}/user/info/?fields=open_id,display_name,avatar_url`, { headers: { Authorization: `Bearer ${tok.access_token}` } })
+  const u = me.data?.user || {}
+  const name = u.display_name || 'TikTok'
+  await save(uid, 'tiktok', {
+    account_id: tok.open_id || u.open_id, username: name, name, avatar: u.avatar_url || null,
+    access_token: tok.access_token, refresh_token: tok.refresh_token || null,
+    expires_at: new Date(Date.now() + (tok.expires_in - 60) * 1000).toISOString(), extra: {},
+  })
+  return { username: name, name, avatar: u.avatar_url || null }
+}
+
+async function tiktokToken(uid: string, a: Acc) {
+  if (a.expires_at && new Date(a.expires_at).getTime() > Date.now()) return a.access_token
+  if (!a.refresh_token) throw new HttpError(401, 'Reconecta tu cuenta de TikTok')
+  const t = await ttJson(`${TT}/oauth/token/`, {
+    method: 'POST', headers: FORM,
+    body: qs({ client_key: TIKTOK.id, client_secret: TIKTOK.secret, grant_type: 'refresh_token', refresh_token: a.refresh_token }),
+  })
+  await admin.from('social_accounts')
+    .update({ access_token: t.access_token, refresh_token: t.refresh_token || a.refresh_token, expires_at: new Date(Date.now() + (t.expires_in - 60) * 1000).toISOString() })
+    .eq('user_id', uid).eq('platform', 'tiktok')
+  return t.access_token as string
+}
+
 // ---- Publicación ----
 type Acc = { account_id: string; access_token: string; refresh_token: string | null; expires_at: string | null; extra: Record<string, string> }
 type Job = { caption?: string; imageUrl?: string; videoUrl?: string; mediaType?: string; subject?: string; recipients?: string; format?: string }
@@ -209,6 +260,56 @@ async function publishFacebook(a: Acc, j: Job) {
   if (j.imageUrl) return post('photos', { url: j.imageUrl, caption: j.caption || '', published: 'true' })
   if (!j.caption) throw new HttpError(400, 'La publicación está vacía')
   return post('feed', { message: j.caption })
+}
+
+// Video por subida directa (FILE_UPLOAD): no requiere verificar el dominio de la URL, a diferencia de PULL_FROM_URL.
+async function publishTikTok(uid: string, a: Acc, j: Job) {
+  if (!(j.mediaType === 'video' && j.videoUrl)) {
+    throw new HttpError(400, 'TikTok solo permite publicar videos desde aquí. Sube un video para publicar en TikTok.')
+  }
+  const tk = await tiktokToken(uid, a)
+  const H = { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json; charset=UTF-8' }
+  const info = await ttJson(`${TT}/post/publish/creator_info/query/`, { method: 'POST', headers: H, body: '{}' })
+  const opts: string[] = info.data?.privacy_level_options || ['SELF_ONLY']
+  // Las apps sin auditoría de TikTok solo pueden publicar en privado (SELF_ONLY).
+  const privacy = opts.includes('PUBLIC_TO_EVERYONE') ? 'PUBLIC_TO_EVERYONE' : opts.includes('SELF_ONLY') ? 'SELF_ONLY' : opts[0]
+
+  const vr = await fetch(j.videoUrl)
+  if (!vr.ok) throw new HttpError(502, 'No se pudo leer el video guardado')
+  const bytes = new Uint8Array(await vr.arrayBuffer())
+  const size = bytes.length
+  const MB = 1024 * 1024
+  const chunk = size <= 64 * MB ? size : 32 * MB // de 5 a 64 MB por trozo; si el video es menor, se sube de una vez
+  const total = Math.max(1, Math.floor(size / chunk)) // el último trozo absorbe el resto
+  const init = await ttJson(`${TT}/post/publish/video/init/`, {
+    method: 'POST', headers: H,
+    body: JSON.stringify({
+      post_info: { title: (j.caption || '').slice(0, 2200), privacy_level: privacy, disable_duet: false, disable_comment: false, disable_stitch: false },
+      source_info: { source: 'FILE_UPLOAD', video_size: size, chunk_size: chunk, total_chunk_count: total },
+    }),
+  })
+  const { upload_url, publish_id } = init.data || {}
+  if (!upload_url) throw new HttpError(502, 'TikTok no entregó la URL de subida')
+  for (let i = 0; i < total; i++) {
+    const start = i * chunk
+    const end = i === total - 1 ? size : start + chunk
+    const r = await fetch(upload_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(end - start), 'Content-Range': `bytes ${start}-${end - 1}/${size}` },
+      body: bytes.slice(start, end),
+    })
+    if (!r.ok && r.status !== 206) throw new HttpError(502, `TikTok rechazó la subida (${r.status})`)
+  }
+  // Espera breve al resultado (TikTok procesa el video de forma asíncrona)
+  let status = ''
+  for (let i = 0; i < 10; i++) {
+    const s = await ttJson(`${TT}/post/publish/status/fetch/`, { method: 'POST', headers: H, body: JSON.stringify({ publish_id }) })
+    status = s.data?.status || ''
+    if (status === 'PUBLISH_COMPLETE') break
+    if (status === 'FAILED') throw new HttpError(502, 'TikTok no pudo publicar: ' + (s.data?.fail_reason || 'error desconocido'))
+    await new Promise((r) => setTimeout(r, 3000))
+  }
+  return { id: publish_id, private: privacy === 'SELF_ONLY', status }
 }
 
 async function gmailToken(uid: string, a: Acc) {
@@ -282,7 +383,9 @@ Deno.serve(async (req) => {
     }
     if (b.action === 'callback') {
       const p = await readState(String(b.state), uid)
-      const info = p === 'email' ? await connectGoogle(uid, String(b.code), String(b.redirectUri)) : await connectMeta(uid, p, String(b.code), String(b.redirectUri))
+      const info = p === 'email' ? await connectGoogle(uid, String(b.code), String(b.redirectUri))
+        : p === 'tiktok' ? await connectTikTok(uid, String(b.code), String(b.redirectUri))
+        : await connectMeta(uid, p, String(b.code), String(b.redirectUri))
       return json({ platform: p, ...info })
     }
     if (b.action === 'disconnect') {
@@ -311,6 +414,7 @@ Deno.serve(async (req) => {
       if (platform === 'instagram') out = await publishInstagram(a, b)
       else if (platform === 'facebook') out = await publishFacebook(a, b)
       else if (platform === 'email') out = await publishEmail(uid, a, b)
+      else if (platform === 'tiktok') out = await publishTikTok(uid, a, b)
       else throw new HttpError(400, 'Red no soportada')
       return json({ ok: true, result: out })
     }
