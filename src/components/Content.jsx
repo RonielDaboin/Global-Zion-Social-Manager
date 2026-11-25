@@ -7,7 +7,7 @@ import { saveVideo } from '../lib/mediaStore.js'
 import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon } from './ui.jsx'
 import {
-  CONTENT_ACCEPT, CONTENT_DAYS, CONTENT_MAX_MB, contentImage, contentUrl, daysLeft, deleteContent,
+  CONTENT_ACCEPT, CONTENT_DAYS, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
   downloadContentBlob, expiresAt, fetchContent, markContentPublished, uploadContent,
 } from '../lib/content.js'
 
@@ -27,6 +27,47 @@ const formatFor = (w, h) => {
   if (r < 0.9) return 'ig-portrait'
   if (r < 1.3) return 'ig-square'
   return r < 1.84 ? 'x-post' : 'fb-post'
+}
+
+const fmtSpace = (b) => (b >= 1073741824 ? +(b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? Math.round(b / 1048576) + ' MB' : b > 0 ? Math.max(1, Math.round(b / 1024)) + ' KB' : '0 MB')
+
+/** Cuánto espacio está ocupado y cuánto queda. `total` es el del proyecto entero (null = no se pudo medir). */
+function StorageMeter({ items, total }) {
+  const mine = items.reduce((n, x) => n + x.size, 0)
+  const used = total === null ? null : Math.max(total, mine)
+  const free = used === null ? null : Math.max(0, STORAGE_LIMIT - used)
+  const pct = used === null ? 0 : Math.min(100, (used / STORAGE_LIMIT) * 100)
+  const level = pct >= 90 ? ' full' : pct >= 75 ? ' warn' : ''
+  const width = (b) => Math.min(100, (b / STORAGE_LIMIT) * 100) + '%'
+  // Referencia de cuántos archivos más caben: según el peso medio de los ya subidos, o el máximo por archivo si no hay
+  const avg = items.length ? mine / items.length : null
+  const fits = free === null ? null : Math.floor(free / (avg || CONTENT_MAX_MB * 1048576))
+  return (
+    <section className={'card lib-space' + level} aria-label={t('Espacio de almacenamiento')}>
+      <div className="lib-space-nums">
+        <div><small>{t('Ocupado')}</small><b>{used === null ? '—' : fmtSpace(used)}</b></div>
+        <div className="free"><small>{t('Disponible')}</small><b>{free === null ? '—' : fmtSpace(free)}</b></div>
+        <div><small>{t('Límite total')}</small><b>{fmtSpace(STORAGE_LIMIT)}</b></div>
+        <div><small>{t('Archivos en Contenido')}</small><b>{items.length}</b></div>
+      </div>
+      <div className="lib-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(pct)} aria-label={t('Espacio ocupado')}>
+        <i className="mine" style={{ width: width(mine) }} />
+        {used !== null && <i className="rest" style={{ width: width(used - mine) }} />}
+      </div>
+      <div className="lib-space-legend">
+        <span><i className="mine" />{t('Tu contenido: {s}', { s: fmtSpace(mine) })}</span>
+        {used !== null && <span><i className="rest" />{t('Publicaciones y otros: {s}', { s: fmtSpace(used - mine) })}</span>}
+        {used !== null && <span className="pct">{t('{n} % ocupado', { n: pct > 0 && pct < 1 ? '<1' : Math.round(pct) })}</span>}
+      </div>
+      <p className="muted">
+        {free === null ? t('No se pudo medir el espacio total en este momento.')
+          : fits < 1 ? t('Queda poco espacio: elimina contenido para poder subir más.')
+            : avg ? t('Caben aproximadamente {n} archivos más, según el peso promedio de los que subiste ({s}).', { n: fits.toLocaleString(locale()), s: fmtSpace(avg) })
+              : t('Caben al menos {n} archivos del tamaño máximo ({m} MB); si pesan menos, caben más.', { n: fits.toLocaleString(locale()), m: CONTENT_MAX_MB })}
+        {' '}{t('El límite se comparte entre todos los usuarios de la app.')}
+      </p>
+    </section>
+  )
 }
 
 function Dialog({ onClose, className = '', children }) {
@@ -101,6 +142,7 @@ export default function Content({ use }) {
   const [preview, setPreview] = useState(null)
   const [ask, setAsk] = useState(null) // {type: 'delete' | 'mark', item}
   const [busyId, setBusyId] = useState(null)
+  const [total, setTotal] = useState(null) // bytes ocupados en todo el proyecto
   const input = useRef(null)
   const alive = useRef(true)
 
@@ -109,6 +151,13 @@ export default function Content({ use }) {
     fetchContent().then((l) => alive.current && setItems(l)).catch((e) => { if (alive.current) { setItems([]); setError(e.message) } })
   }
   useEffect(() => { alive.current = true; load(); return () => { alive.current = false } }, []) // eslint-disable-line
+
+  // El total se vuelve a medir cada vez que cambia la lista (subir o eliminar)
+  const count = items?.length
+  useEffect(() => {
+    if (count === undefined) return
+    fetchStorageUsed().then((n) => alive.current && setTotal(n))
+  }, [count])
 
   const upload = async (fileList) => {
     const files = [...(fileList || [])]
@@ -180,7 +229,6 @@ export default function Content({ use }) {
   }
 
   const list = (items || []).filter(FILTERS.find((f) => f[0] === filter)[2])
-  const used = (items || []).reduce((n, x) => n + x.size, 0)
 
   return (
     <div className="page lib">
@@ -189,6 +237,8 @@ export default function Content({ use }) {
         <button className="btn primary" disabled={!!uploading || !!error} onClick={() => input.current.click()}><Icon name="up" size={16} /> {t('Subir contenido')}</button>
       </header>
       <input ref={input} type="file" accept={CONTENT_ACCEPT} multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
+
+      {!error && items !== null && <StorageMeter items={items} total={total} />}
 
       {error ? (
         <div className="banner err lib-error"><span>{error}</span><button className="btn ghost sm" onClick={load}>{t('Reintentar')}</button></div>
@@ -218,7 +268,6 @@ export default function Content({ use }) {
           <div className="chips">{FILTERS.map(([id, label, test]) => (
             <button key={id} className={'chip' + (filter === id ? ' on' : '')} onClick={() => setFilter(id)}>{t(label)} ({(items || []).filter(test).length})</button>
           ))}</div>
-          <small className="muted">{t('Espacio usado: {s}', { s: used ? fmtSize(used) : '0 MB' })}</small>
         </div>
       )}
 

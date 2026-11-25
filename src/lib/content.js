@@ -5,6 +5,7 @@ import { t } from './i18n.jsx'
 
 export const CONTENT_DAYS = 30
 export const CONTENT_MAX_MB = 50 // máximo por archivo del plan gratuito de Supabase
+export const STORAGE_LIMIT = 1024 * 1048576 // 1 GB del plan gratuito, compartido por todo el proyecto (cambiar si se sube de plan)
 export const CONTENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm'
 const BUCKET = 'content'
 const TABLE = 'content_items'
@@ -24,6 +25,12 @@ const fail = (error) => {
     throw new Error(t('La biblioteca de contenido todavía no está activada en el servidor.'))
   }
   throw new Error(error.message)
+}
+
+/** Bytes ocupados en todo el proyecto, o null si no se pudo medir. */
+export async function fetchStorageUsed() {
+  const { data, error } = await supabase.rpc('storage_used_bytes')
+  return error || data == null ? null : Number(data)
 }
 
 async function removeItems(items) {
