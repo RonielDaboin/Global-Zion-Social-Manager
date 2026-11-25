@@ -3,8 +3,9 @@ import { publishPost, cleanupPostMedia, handleOAuthCallback, onOAuthResult, fetc
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
-import { deleteVideo, pushVideo } from './mediaStore.js'
-import { fetchPosts, upsertPosts, deletePosts } from './cloud.js'
+import { deleteVideo, pushVideo, dropLocalVideo } from './mediaStore.js'
+import { fetchPosts, fetchPostIndex, fetchPostsByIds, upsertPosts, deletePosts, claimPost } from './cloud.js'
+import { checkAccess, workspaceId } from './workspace.js'
 import { accessOf } from './plans.js'
 import { cleanupContent, markContentPublished } from './content.js'
 
@@ -33,44 +34,111 @@ export function AppProvider({ children }) {
   const loadedFor = useRef(null)
   const cloudReady = useRef(false) // true cuando ya se cargaron las publicaciones desde Supabase
   const syncedRef = useRef({}) // id -> JSON de la última versión guardada en Supabase
+  const versionsRef = useRef({}) // id -> versión (updated_at) de lo que ya tenemos
+  const socialReady = useRef(false) // las redes conectadas ya se cargaron
+  const claiming = useRef(new Set()) // publicaciones que este navegador está publicando
+  // La app es privada: 'checking' | 'ok' | 'denied' | 'error'
+  const [memberState, setMemberState] = useState({ key: null, status: 'checking' })
+  const [accessTry, setAccessTry] = useState(0)
+  const member = memberState.key === key ? memberState.status : 'checking'
+  useEffect(() => {
+    if (!session) return
+    setMemberState({ key, status: 'checking' })
+    checkAccess()
+      .then((r) => setMemberState({ key, status: r.ws ? 'ok' : 'denied' }))
+      .catch(() => setMemberState({ key, status: 'error' }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, accessTry])
+
+  // Cuentas reales (tokens en el servidor) + qué redes están configuradas
+  const loadSocial = (forKey) => fetchSocial().then((r) => {
+    if (!r || loadedFor.current !== forKey) return
+    socialReady.current = true
+    setSocial({ configured: r.configured || {}, ready: true })
+    const real = Object.fromEntries((r.accounts || []).map((x) => [x.platform, {
+      real: true, accountId: x.account_id, username: x.username || x.name || '', name: x.name, avatar: x.avatar,
+      provider: x.extra?.provider, connectedAt: new Date(x.connected_at).getTime(),
+    }]))
+    setAccounts((a) => ({ ...Object.fromEntries(Object.entries(a).filter(([, v]) => !v.real)), ...real }))
+  })
 
   useEffect(() => {
     cloudReady.current = false
-    if (!session) { loadedFor.current = null; return }
+    socialReady.current = false
+    syncedRef.current = {}; versionsRef.current = {}
+    if (!session || member !== 'ok') { loadedFor.current = null; return }
     setAccounts(read(`gz_accounts_${key}`, {}))
     const local = read(`gz_posts_${key}`, [])
     setPosts(local)
     loadedFor.current = key
     // Publicaciones en Supabase. La primera vez en este navegador se fusionan con las locales (y se suben);
     // después, Supabase es la fuente de verdad.
-    fetchPosts().then((remote) => {
+    fetchPosts().then((rows) => {
       if (loadedFor.current !== key) return
+      const remote = rows.map((r) => r.post)
       const ids = new Set(remote.map((p) => p.id))
       const merged = read(`gz_cloud_${key}`, false) ? remote : [...remote, ...local.filter((p) => !ids.has(p.id))]
       syncedRef.current = Object.fromEntries(remote.map((p) => [p.id, JSON.stringify(p)]))
+      versionsRef.current = Object.fromEntries(rows.map((r) => [r.post.id, r.version]))
       cloudReady.current = true
       write(`gz_cloud_${key}`, true)
-      // Lo que se está publicando en este momento solo existe en memoria: se conserva al recargar la lista
+      // Lo que este navegador está publicando solo está al día en memoria: se conserva al recargar la lista
       setPosts((cur) => {
-        const busy = cur.filter((p) => p.status === 'publishing')
+        const busy = cur.filter((p) => claiming.current.has(p.id))
         const ids2 = new Set(busy.map((p) => p.id))
         return [...busy, ...merged.filter((p) => !ids2.has(p.id))]
       })
     }).catch(() => notify(t('No se pudo conectar con la nube; se usan los datos locales'), 'err'))
-    // Cuentas reales (tokens en el servidor) + qué redes están configuradas
-    fetchSocial().then((r) => {
-      if (!r || loadedFor.current !== key) return
-      setSocial({ configured: r.configured || {}, ready: true })
-      const real = Object.fromEntries((r.accounts || []).map((x) => [x.platform, {
-        real: true, accountId: x.account_id, username: x.username || x.name || '', name: x.name, avatar: x.avatar,
-        provider: x.extra?.provider, connectedAt: new Date(x.connected_at).getTime(),
-      }]))
-      setAccounts((a) => ({ ...Object.fromEntries(Object.entries(a).filter(([, v]) => !v.real)), ...real }))
-    })
+    loadSocial(key)
     // Solo depende del usuario (key): antes dependía del objeto de sesión, que se recreaba en cada evento de Supabase
     // (volver a la pestaña, renovar token, guardar el perfil) y recargaba las publicaciones a mitad de una publicación.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, member])
+
+  // Trae lo que cambió otra persona (cada 20 s con la pestaña visible, y al volver a ella)
+  const refreshing = useRef(false)
+  const refresh = useCallback(async () => {
+    const forKey = loadedFor.current
+    if (!cloudReady.current || refreshing.current) return
+    refreshing.current = true
+    try {
+      const known = Object.keys(syncedRef.current) // lo guardado antes de consultar: lo creado mientras tanto no se toca
+      const index = await fetchPostIndex()
+      const changed = index.filter((r) => versionsRef.current[r.id] !== r.version).map((r) => r.id)
+      const rows = changed.length ? await fetchPostsByIds(changed) : []
+      if (loadedFor.current !== forKey || !cloudReady.current) return
+      const alive = new Set(index.map((r) => r.id))
+      const synced = syncedRef.current
+      const local = new Map(postsRef.current.map((p) => [p.id, p]))
+      // Un cambio local sin guardar manda sobre el remoto
+      const dirty = (id) => claiming.current.has(id) || (local.has(id) ? synced[id] !== JSON.stringify(local.get(id)) : !!synced[id])
+      const updates = new Map()
+      for (const { post, version } of rows) {
+        if (dirty(post.id)) continue
+        if (post.mediaType === 'video' && local.has(post.id)) dropLocalVideo(post.id) // pudo cambiar el video
+        synced[post.id] = JSON.stringify(post)
+        versionsRef.current[post.id] = version
+        updates.set(post.id, post)
+      }
+      const removed = new Set(known.filter((id) => !alive.has(id) && !claiming.current.has(id) && local.has(id) && !dirty(id)))
+      removed.forEach((id) => { delete synced[id]; delete versionsRef.current[id] })
+      if (!updates.size && !removed.size) return
+      setPosts((cur) => {
+        const have = new Set(cur.map((p) => p.id))
+        const added = [...updates.values()].filter((p) => !have.has(p.id))
+        return [...added, ...cur.filter((p) => !removed.has(p.id)).map((p) => updates.get(p.id) || p)]
+      })
+    } catch { /* se reintenta en la próxima vuelta */ } finally { refreshing.current = false }
+  }, [])
+  useEffect(() => {
+    if (!session || member !== 'ok') return undefined
+    const tick = () => { if (!document.hidden) refresh() }
+    const back = () => { if (!document.hidden) { refresh(); loadSocial(key) } }
+    const timer = setInterval(tick, 20000)
+    document.addEventListener('visibilitychange', back)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', back) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, member, refresh])
 
   // Solo las cuentas demo se guardan en el navegador; las reales viven en el servidor
   useEffect(() => { if (loadedFor.current === key) write(`gz_accounts_${key}`, Object.fromEntries(Object.entries(accounts).filter(([, v]) => !v.real))) }, [accounts, key])
@@ -83,18 +151,18 @@ export function AppProvider({ children }) {
     if (!cloudReady.current || !session) return
     const h = setTimeout(async () => {
       const synced = syncedRef.current
-      const stable = posts.filter((p) => p.status !== 'publishing')
+      const stable = posts.filter((p) => p.status !== 'publishing' && !claiming.current.has(p.id)) // lo reservado no se pisa
       const up = stable.filter((p) => JSON.stringify(p) !== synced[p.id])
       const del = Object.keys(synced).filter((id) => !posts.some((p) => p.id === id))
       if (!up.length && !del.length) return
       try {
+        const ws = await workspaceId()
         for (const p of up) if (p.mediaType === 'video' && p.status !== 'published') await pushVideo(p.id).catch(() => {})
-        await upsertPosts(session.id, up)
-        await deletePosts(session.id, del)
-        const next = { ...synced }
-        up.forEach((p) => { next[p.id] = JSON.stringify(p) })
-        del.forEach((id) => { delete next[id] })
-        syncedRef.current = next
+        const versions = await upsertPosts(ws, up)
+        await deletePosts(ws, del)
+        up.forEach((p) => { syncedRef.current[p.id] = JSON.stringify(p) })
+        Object.assign(versionsRef.current, versions)
+        del.forEach((id) => { delete syncedRef.current[id]; delete versionsRef.current[id] })
       } catch (e) { notify(t('No se pudo guardar en la nube:') + ' ' + e.message, 'err') }
     }, 900)
     return () => clearTimeout(h)
@@ -135,6 +203,7 @@ export function AppProvider({ children }) {
   const authErr = (e) => {
     const m = e.message || ''
     if (/invalid login/i.test(m)) return new Error(t('Correo o contraseña incorrectos'))
+    if (/database error saving new user|signup_disabled/i.test(m)) return new Error(t('Esta app es privada: ese correo no tiene acceso.'))
     if (/already registered/i.test(m)) return new Error(t('Ese correo ya está registrado'))
     if (/not confirmed/i.test(m)) return new Error(t('Confirma tu correo antes de entrar'))
     return new Error(m)
@@ -169,7 +238,7 @@ export function AppProvider({ children }) {
     return true
   }
 
-  useEffect(() => { if (session) { cleanupPostMedia(); cleanupContent() } }, [session?.id]) // eslint-disable-line
+  useEffect(() => { if (session && member === 'ok') { cleanupPostMedia(); cleanupContent() } }, [session?.id, member]) // eslint-disable-line
 
   // Resultado de la ventana emergente de inicio de sesión (la app original no se recarga)
   useEffect(() => {
@@ -206,10 +275,28 @@ export function AppProvider({ children }) {
   const accountsRef = useRef(accounts); accountsRef.current = accounts
   const meRef = useRef(me); meRef.current = me
 
-  const publishNow = useCallback(async (id) => {
-    const post = postsRef.current.find((p) => p.id === id)
-    if (!post) return
-    setPosts((l) => l.map((p) => (p.id === id ? { ...p, status: 'publishing' } : p)))
+  const publishNow = useCallback(async (id, { scheduled = false } = {}) => {
+    const local = postsRef.current.find((p) => p.id === id)
+    if (!local || claiming.current.has(id)) return
+    claiming.current.add(id)
+    let post
+    try {
+      if (!scheduled && local.mediaType === 'video') await pushVideo(id).catch(() => {})
+      post = await claimPost(id, scheduled ? null : local)
+    } catch (e) {
+      claiming.current.delete(id)
+      setPosts((l) => [...l]) // vuelve a activar el guardado que se pausó durante la reserva
+      if (!scheduled) notify(t('No se pudo publicar:') + ' ' + e.message, 'err')
+      return
+    }
+    if (!post) { // ya la tomó o publicó la otra sesión, o cambió
+      claiming.current.delete(id)
+      if (!scheduled) notify(t('Esta publicación ya se está publicando o ya se publicó desde otra sesión.'), 'err')
+      refresh()
+      return
+    }
+    syncedRef.current[id] = '' // obliga a guardar el resultado final
+    setPosts((l) => l.map((p) => (p.id === id ? { ...post, status: 'publishing' } : p)))
     let results
     try { results = await publishPost(post, accountsRef.current) } catch (e) {
       // Un error inesperado no debe dejar la publicación "publicando…" para siempre
@@ -220,23 +307,25 @@ export function AppProvider({ children }) {
     setPosts((l) => l.map((p) => (p.id === id
       ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }
       : p)))
+    claiming.current.delete(id)
     // Si usó un archivo de la sección Contenido y llegó a publicarse en alguna red, empieza su vigencia de 30 días
     if (post.contentId && Object.values(results).some((r) => r.ok && !r.demo)) markContentPublished(post.contentId).catch(() => {})
     const demo = Object.values(results).some((r) => r.demo)
     if (allOk) notify(demo ? t('Publicado (modo demo: simulado)') : t('¡Publicado con éxito!'))
     else notify(t('Falló:') + ' ' + Object.entries(results).filter(([, r]) => !r.ok).map(([k, r]) => `${k}: ${r.error}`).join(', '), 'err')
-  }, [notify])
+  }, [notify, refresh])
 
   // Programador: revisa cada 15 s las publicaciones cuyo momento ya llegó (mientras la app esté abierta)
   useEffect(() => {
-    if (!session) return
+    if (!session || member !== 'ok') return
     const t = setInterval(() => {
+      if (!socialReady.current) { loadSocial(key); return } // sin las redes cargadas fallaría con «cuenta no conectada»: se reintenta
       postsRef.current
         .filter((p) => p.status === 'scheduled' && p.scheduledAt <= Date.now())
-        .forEach((p) => publishNow(p.id))
+        .forEach((p) => publishNow(p.id, { scheduled: true }))
     }, 15000)
     return () => clearInterval(t)
-  }, [session, publishNow])
+  }, [session, member, publishNow])
 
   const access = accessOf(session)
   const openPlans = (hint = '') => setPlansHint(hint)
@@ -254,6 +343,7 @@ export function AppProvider({ children }) {
 
   const value = {
     access, plansHint, openPlans, closePlans,
+    member, retryAccess: () => setAccessTry((n) => n + 1),
     session, authReady, register, login, loginWithGoogle, logout,
     accounts, connectAccount, disconnectAccount, social,
     posts, savePost, deletePost, publishNow,

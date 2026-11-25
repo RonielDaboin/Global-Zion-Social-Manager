@@ -10,6 +10,7 @@ import { loadVideo } from './mediaStore.js'
 import { designFormats, formatsFor, getFormat } from './formats.js'
 import { renderToDataURL } from './render.js'
 import { supabase } from './supabase.js'
+import { workspaceId } from './workspace.js'
 import { logAI, isLimitMsg } from './aiUsage.js'
 
 const env = import.meta.env
@@ -92,8 +93,8 @@ export function onOAuthResult(cb) {
 
 /** Sube la imagen/video a Storage (bucket público) para que Instagram/Facebook puedan descargarlos. */
 async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error(t('Inicia sesión para continuar'))
+  const ws = await workspaceId()
+  if (!ws) throw new Error(t('Inicia sesión para continuar'))
   let blob, ext
   if (kind === 'video') {
     blob = await loadVideo(post.id)
@@ -103,7 +104,7 @@ async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) 
     blob = await (await fetch(src)).blob()
     ext = blob.type === 'image/png' ? 'png' : 'jpg'
   }
-  const path = `${session.user.id}/${post.id}${tag}-${Date.now()}.${ext}`
+  const path = `${ws}/${post.id}${tag}-${Date.now()}.${ext}`
   const { error } = await supabase.storage.from('post-media').upload(path, blob, { contentType: blob.type, upsert: true })
   if (error) throw new Error(error.message)
   sink?.push(path)
@@ -161,9 +162,8 @@ const VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i
 /** Borra de Storage los videos temporales de publicación con más de 1 h (ya los descargaron las redes). */
 export async function cleanupPostMedia() {
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const uid = session.user.id
+    const uid = await workspaceId()
+    if (!uid) return
     const { data } = await supabase.storage.from('post-media').list(uid, { limit: 1000 })
     const old = (data || []).filter((f) => VIDEO_EXT.test(f.name) && Date.now() - new Date(f.created_at || 0).getTime() > 3600000)
     if (old.length) await supabase.storage.from('post-media').remove(old.map((f) => `${uid}/${f.name}`))

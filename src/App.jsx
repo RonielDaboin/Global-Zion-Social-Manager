@@ -51,7 +51,7 @@ export default function App() {
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  const { session, authReady, logout, toast, storageFull, setDraft, draft, access: acc0, openPlans } = useApp()
+  const { session, authReady, logout, toast, storageFull, setDraft, draft, access: acc0, openPlans, member, retryAccess } = useApp()
   // La sección actual se refleja en la URL (#/create-post) y se puede abrir/compartir directamente
   const [page, setPageRaw] = useState(() => {
     const fromHash = PAGE_BY_SLUG[window.location.hash.replace(/^#\/?/, '').split('/')[0]]
@@ -79,6 +79,22 @@ export default function App() {
   if (legal) return <Legal doc={legal} />
   if (!authReady) return null
   if (!session) return <><Login /><PlansModal />{toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}</>
+
+  if (member === 'checking') return null
+  if (member !== 'ok') {
+    const denied = member === 'denied'
+    return (
+      <div className="modal-bg">
+        <div className="modal" role="alertdialog" aria-modal="true">
+          <Logo />
+          <h3>{denied ? t('Acceso privado') : t('No se pudo comprobar tu acceso')}</h3>
+          <p className="muted">{denied ? t('La cuenta {e} no tiene acceso. Por ahora la app solo la usan las personas autorizadas.', { e: session.email }) : t('Revisa tu conexión e inténtalo de nuevo.')}</p>
+          {!denied && <button className="btn primary" onClick={retryAccess}>{t('Reintentar')}</button>}
+          <button className="btn ghost" onClick={logout}><Icon name="out" /> {t('Cerrar sesión')}</button>
+        </div>
+      </div>
+    )
+  }
 
   const access = acc0
   const go = (p) => {

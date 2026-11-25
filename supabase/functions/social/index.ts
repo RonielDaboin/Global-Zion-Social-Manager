@@ -357,7 +357,11 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
     const { data: u, error: ue } = await admin.auth.getUser(jwt)
     if (ue || !u.user) throw new HttpError(401, 'Inicia sesión para continuar')
-    const uid = u.user.id
+    // App privada y compartida: solo los miembros, y todos usan las redes conectadas en el espacio del dueño
+    const { data: ws, error: we } = await admin.rpc('member_workspace', { p_user: u.user.id })
+    if (we) throw new HttpError(500, we.message)
+    if (!ws) throw new HttpError(403, 'Esta app es privada: tu cuenta no tiene acceso.')
+    const uid = ws as string
     const b = await req.json().catch(() => ({}))
     const platform = String(b.platform || '')
     // Reglas del plan (app_metadata.plan): redes permitidas y número de cuentas conectadas

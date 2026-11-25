@@ -2,6 +2,7 @@
 // Un archivo se conserva hasta que se publica; desde ese momento tiene CONTENT_DAYS días de vigencia y luego se borra.
 import { supabase } from './supabase.js'
 import { t } from './i18n.jsx'
+import { workspaceId } from './workspace.js'
 
 export const CONTENT_DAYS = 30
 export const CONTENT_MAX_MB = 50 // máximo por archivo del plan gratuito de Supabase
@@ -97,17 +98,17 @@ const videoThumb = (blob) => new Promise((res) => {
 export async function uploadContent(file) {
   if (!CONTENT_ACCEPT.split(',').includes(file.type)) throw new Error(t('Formato no admitido. Usa JPG, PNG, WEBP, GIF, MP4, MOV o WEBM.'))
   if (file.size > CONTENT_MAX_MB * 1048576) throw new Error(t('El archivo supera el máximo de {n} MB.', { n: CONTENT_MAX_MB }))
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error(t('Inicia sesión para continuar'))
+  const ws = await workspaceId()
+  if (!ws) throw new Error(t('Inicia sesión para continuar'))
   let thumb
   if (file.type.startsWith('video/')) thumb = await videoThumb(file)
   else { const im = await loadImageBlob(file); thumb = drawScaled(im, im.naturalWidth, im.naturalHeight, 480, 0.72) }
   const id = crypto.randomUUID()
   const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || file.type.split('/')[1]).toLowerCase()
-  const path = `${session.user.id}/${id}.${ext}`
+  const path = `${ws}/${id}.${ext}`
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type })
   if (error) fail(error)
-  const { data, error: e2 } = await supabase.from(TABLE).insert({ id, user_id: session.user.id, name: file.name, mime: file.type, size: file.size, path, thumb }).select().single()
+  const { data, error: e2 } = await supabase.from(TABLE).insert({ id, user_id: ws, name: file.name, mime: file.type, size: file.size, path, thumb }).select().single()
   if (e2) { await supabase.storage.from(BUCKET).remove([path]); fail(e2) } // sin fila no habría forma de borrarlo después
   return toItem(data)
 }

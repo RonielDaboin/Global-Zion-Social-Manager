@@ -1,5 +1,6 @@
 // Los videos pesan demasiado para localStorage: se guardan en IndexedDB (caché local) y en Supabase Storage (bucket privado post-videos).
 import { supabase } from './supabase.js'
+import { workspaceId } from './workspace.js'
 
 const DB = 'gz-media'
 const STORE = 'videos'
@@ -24,11 +25,14 @@ const run = async (mode, fn) => {
 const idbGet = (id) => run('readonly', (s) => s.get(id)).catch(() => null)
 const idbPut = (id, blob) => run('readwrite', (s) => s.put(blob, id))
 const path = async (id) => {
-  const { data } = await supabase.auth.getSession()
-  return data.session ? `${data.session.user.id}/${id}` : null
+  const ws = await workspaceId()
+  return ws ? `${ws}/${id}` : null
 }
 
 export const saveVideo = (id, blob) => idbPut(id, blob)
+
+/** Olvida solo la copia local (se vuelve a bajar de la nube cuando se necesite). */
+export const dropLocalVideo = (id) => run('readwrite', (s) => s.delete(id)).catch(() => {})
 
 /** Local primero; si no está (otro navegador/dirección), lo baja de Supabase y lo cachea. */
 export const loadVideo = async (id) => {

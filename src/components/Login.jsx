@@ -80,6 +80,7 @@ function urlAuthError() {
     const code = q.get('error_code'), desc = q.get('error_description')
     if (!code && !desc) return ''
     window.history.replaceState(null, '', window.location.pathname + '#/dashboard')
+    if (/database error saving new user|signup_disabled/i.test(desc || '')) return t('Esta app es privada: ese correo no tiene acceso.')
     if (code === 'signup_disabled') return t('El registro de cuentas nuevas está desactivado por ahora. Escríbenos para darte acceso.')
     return desc ? desc.replace(/\+/g, ' ') : t('No se pudo iniciar sesión con Google. Inténtalo de nuevo.')
   } catch { return '' }
@@ -131,6 +132,7 @@ export default function Login() {
       </div>
       <form className="auth-card" onSubmit={submit}>
         <h2>{mode === 'login' ? t('Iniciar sesión') : t('Crear cuenta')}</h2>
+        <p className="muted">🔒 {t('Por ahora el acceso es privado: solo cuentas autorizadas.')}</p>
         <GoogleSignIn onLogin={loginWithGoogle} onError={setErr} />
         <div className="or"><span>{t('o con tu correo')}</span></div>
         {mode === 'register' && (

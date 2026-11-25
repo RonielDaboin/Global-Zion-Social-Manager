@@ -34,7 +34,7 @@ const fmtSpace = (b) => (b >= 1073741824 ? +(b / 1073741824).toFixed(2) + ' GB' 
 /** Cuánto espacio está ocupado y cuánto queda. `total` es el del proyecto entero (null = no se pudo medir). */
 function StorageMeter({ items, total }) {
   const mine = items.reduce((n, x) => n + x.size, 0)
-  const used = total === null ? null : Math.max(total, mine)
+  const used = total == null ? null : Math.max(total, mine)
   const free = used === null ? null : Math.max(0, STORAGE_LIMIT - used)
   const pct = used === null ? 0 : Math.min(100, (used / STORAGE_LIMIT) * 100)
   const level = pct >= 90 ? ' full' : pct >= 75 ? ' warn' : ''
@@ -60,7 +60,7 @@ function StorageMeter({ items, total }) {
         {used !== null && <span className="pct">{t('{n} % ocupado', { n: pct > 0 && pct < 1 ? '<1' : Math.round(pct) })}</span>}
       </div>
       <p className="muted">
-        {free === null ? t('No se pudo medir el espacio total en este momento.')
+        {free === null ? (total === undefined ? t('Midiendo el espacio…') : t('No se pudo medir el espacio total en este momento.'))
           : fits < 1 ? t('Queda poco espacio: elimina contenido para poder subir más.')
             : avg ? t('Caben aproximadamente {n} archivos más, según el peso promedio de los que subiste ({s}).', { n: fits.toLocaleString(locale()), s: fmtSpace(avg) })
               : t('Caben al menos {n} archivos del tamaño máximo ({m} MB); si pesan menos, caben más.', { n: fits.toLocaleString(locale()), m: CONTENT_MAX_MB })}
@@ -142,7 +142,7 @@ export default function Content({ use }) {
   const [preview, setPreview] = useState(null)
   const [ask, setAsk] = useState(null) // {type: 'delete' | 'mark', item}
   const [busyId, setBusyId] = useState(null)
-  const [total, setTotal] = useState(null) // bytes ocupados en todo el proyecto
+  const [total, setTotal] = useState(undefined) // bytes ocupados en todo el proyecto (undefined = midiendo, null = falló)
   const input = useRef(null)
   const alive = useRef(true)
 
