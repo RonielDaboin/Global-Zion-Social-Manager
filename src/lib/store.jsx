@@ -6,6 +6,7 @@ import { supabase, toSession } from './supabase.js'
 import { deleteVideo, pushVideo } from './mediaStore.js'
 import { fetchPosts, upsertPosts, deletePosts } from './cloud.js'
 import { accessOf } from './plans.js'
+import { cleanupContent, markContentPublished } from './content.js'
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -168,7 +169,7 @@ export function AppProvider({ children }) {
     return true
   }
 
-  useEffect(() => { if (session) cleanupPostMedia() }, [session?.id]) // eslint-disable-line
+  useEffect(() => { if (session) { cleanupPostMedia(); cleanupContent() } }, [session?.id]) // eslint-disable-line
 
   // Resultado de la ventana emergente de inicio de sesión (la app original no se recarga)
   useEffect(() => {
@@ -219,6 +220,8 @@ export function AppProvider({ children }) {
     setPosts((l) => l.map((p) => (p.id === id
       ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }
       : p)))
+    // Si usó un archivo de la sección Contenido y llegó a publicarse en alguna red, empieza su vigencia de 30 días
+    if (post.contentId && Object.values(results).some((r) => r.ok && !r.demo)) markContentPublished(post.contentId).catch(() => {})
     const demo = Object.values(results).some((r) => r.demo)
     if (allOk) notify(demo ? t('Publicado (modo demo: simulado)') : t('¡Publicado con éxito!'))
     else notify(t('Falló:') + ' ' + Object.entries(results).filter(([, r]) => !r.ok).map(([k, r]) => `${k}: ${r.error}`).join(', '), 'err')

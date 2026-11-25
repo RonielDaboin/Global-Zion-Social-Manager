@@ -8,6 +8,7 @@ import AICredits from './components/AICredits.jsx'
 import Composer from './components/Composer.jsx'
 import Posts from './components/Posts.jsx'
 import Calendar from './components/Calendar.jsx'
+import Content from './components/Content.jsx'
 import { useUsageTime } from './lib/useTime.js'
 import Profile from './components/Profile.jsx'
 import PlansModal from './components/Plans.jsx'
@@ -18,13 +19,14 @@ import { Logo, Icon, ThemeToggle, LangToggle, Avatar } from './components/ui.jsx
 const NAV = [
   { id: 'dashboard', label: 'Panel', icon: 'home' },
   { id: 'composer', label: 'Crear publicación', icon: 'plus' },
+  { id: 'content', label: 'Contenido', icon: 'folder' },
   { id: 'posts', label: 'Publicaciones', icon: 'grid' },
   { id: 'calendar', label: 'Calendario', icon: 'cal' },
   { id: 'accounts', label: 'Cuentas', icon: 'link' },
   { id: 'credits', label: 'Créditos IA', icon: 'magic' },
 ]
 
-const SLUG = { dashboard: 'dashboard', composer: 'create-post', posts: 'posts', calendar: 'calendar', accounts: 'accounts', credits: 'ai-credits', profile: 'profile' }
+const SLUG = { dashboard: 'dashboard', composer: 'create-post', posts: 'posts', content: 'content', calendar: 'calendar', accounts: 'accounts', credits: 'ai-credits', profile: 'profile' }
 const PAGE_BY_SLUG = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]))
 
 // Páginas públicas (se ven sin iniciar sesión; Meta y Google exigen una URL pública de privacidad)
@@ -132,6 +134,7 @@ export default function App() {
         {storageFull && <div className="banner err">{t('El almacenamiento del navegador está lleno: elimina publicaciones antiguas con imágenes.')}</div>}
         {page === 'dashboard' && <Dashboard go={go} edit={edit} />}
         {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} />}
+        {page === 'content' && <Content use={edit} />}
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}
         {page === 'accounts' && <Accounts />}

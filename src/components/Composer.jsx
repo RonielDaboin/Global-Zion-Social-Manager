@@ -42,7 +42,8 @@ export default function Composer({ onDone, onDiscard }) {
   const [w] = useState(() => wipRead(wipKey))
   const src = w || draft || {}
   const [id] = useState(src.id || uid())
-  const [editing] = useState(w ? !!w.editing : !!draft)
+  const [editing] = useState(w ? !!w.editing : !!draft && !draft.fromContent)
+  const [contentId] = useState(src.contentId || null) // archivo de la sección Contenido usado en esta publicación
   const [createdAt] = useState(src.createdAt || null)
   const [design, setDesign] = useState(src.design || blankDesign())
   const [caption, setCaption] = useState(src.caption || '')
@@ -78,7 +79,7 @@ export default function Composer({ onDone, onDiscard }) {
   useEffect(() => { if (videoFile) saveVideo(id, videoFile).catch(() => {}) }, [videoFile, id])
 
   // Guardado automático del trabajo en curso (con pequeño retraso) + guardado final al salir o recargar
-  const snap = { id, editing, createdAt, design, caption, platforms, subject, recipients, when, topic, tone, useImage, mediaType, video }
+  const snap = { id, contentId, editing, createdAt, design, caption, platforms, subject, recipients, when, topic, tone, useImage, mediaType, video }
   const snapRef = useRef(snap); snapRef.current = snap
   const stopped = useRef(false)
   const flush = () => { if (!stopped.current) wipWrite(wipKey, snapRef.current) }
@@ -118,7 +119,7 @@ export default function Composer({ onDone, onDiscard }) {
   const build = async (status) => {
     const image = isVideo ? video.cover : await renderToDataURL(design)
     if (isVideo) await saveVideo(id, videoFile); else await deleteVideo(id)
-    return { id, caption, subject, recipients, platforms, mediaType, video: isVideo ? video : null, format: design.format, design, image, status, scheduledAt: status === 'scheduled' ? new Date(when).getTime() : null, createdAt: createdAt || Date.now() }
+    return { id, contentId, caption, subject, recipients, platforms, mediaType, video: isVideo ? video : null, format: design.format, design, image, status, scheduledAt: status === 'scheduled' ? new Date(when).getTime() : null, createdAt: createdAt || Date.now() }
   }
 
   const validate = (needPlatforms) => {
