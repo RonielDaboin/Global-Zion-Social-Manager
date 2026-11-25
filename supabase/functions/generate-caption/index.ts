@@ -8,6 +8,7 @@
 // Por defecto exige un usuario con sesión iniciada (verify_jwt = true).
 
 import { requirePlan } from '../_shared/plan.ts'
+import { KNOWLEDGE, KNOWLEDGE_RULES } from '../_shared/knowledge.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -22,9 +23,8 @@ const json = (body: unknown, status = 200) =>
 const MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
 // GEMINI_MODEL (opcional) fuerza un modelo concreto al principio de la lista
 const MODEL = Deno.env.get('GEMINI_MODEL') || MODELS[0]
-const ALLOWED = MODELS
 // Modelos que el cliente puede pedir (lista cerrada, para poder comparar velocidad y calidad)
-const ALLOWED = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash']
+const ALLOWED = MODELS
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -59,6 +59,8 @@ Deno.serve(async (req) => {
 
   const instructions = [
     `Eres el community manager de Global Zion, una agencia chilena de diseño y desarrollo web.`,
+    KNOWLEDGE,
+    KNOWLEDGE_RULES,
     `Escribe el texto (caption) de una publicación en ${lang}.`,
     `Tono: ${tone}. Tipo de contenido: ${mediaType}. Redes: ${networks || 'redes sociales'}.`,
     topic ? `Tema indicado por el usuario: "${topic}".` : `El usuario no indicó tema: básate en lo que muestra la imagen.`,

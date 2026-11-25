@@ -1421,14 +1421,14 @@ img, video, canvas, svg { max-width: 100%; }
 .regen textarea { width: 100%; }
 .regen > .btn { justify-self: start; }
 
-.modal.auto-post.auto-pick { width: min(900px, 100%); }
 .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .pick-card { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg2); }
 .pick-card.off { opacity: .95; }
-.pick-tag { font-size: 12.5px; font-weight: 700; color: var(--muted); }
-.pick-img { display: grid; place-items: center; aspect-ratio: 4 / 5; border-radius: 12px; background: #0b1324; overflow: hidden; padding: 6px; text-align: center; }
-.pick-img img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }
-@media (max-width: 700px) { .pick-grid { grid-template-columns: 1fr; } .pick-img { aspect-ratio: 1 / 1; } }
+.pick-tag { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.pick-tag em { font-style: normal; font-weight: 600; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; }
+.pick-img { display: grid; place-items: center; grid-template: minmax(0, 1fr) / minmax(0, 1fr); aspect-ratio: 4 / 5; border-radius: 12px; background: #0b1324; overflow: hidden; padding: 6px; text-align: center; }
+.pick-img img { width: 100%; height: 100%; min-height: 0; object-fit: contain; border-radius: 10px; }
+@media (max-width: 700px) { .pick-grid { grid-template-columns: 1fr; } .pick-img:not(:has(img)) { aspect-ratio: auto; min-height: 150px; } }
 
 .pick-hist { display: grid; gap: 6px; }
 .pick-hist-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2280,3 +2280,46 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
   .mbar-act { gap: 3px; } .mbar-act .seg.lang button { padding: 6px 7px; }
   .stats, .kpis { grid-template-columns: 1fr; }
 }
+
+/* Chat de correcciones de «Crear con IA» */
+/* Espacio de trabajo: las dos opciones a la izquierda y el chat a la derecha (apilados en pantallas angostas) */
+.modal.auto-post.auto-pick { width: min(1320px, 100%); }
+.pick-work { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
+.pick-side { display: grid; gap: 8px; min-width: 0; position: sticky; top: 0; }
+.pick-card.sel { border-color: var(--violet, #7c3aed); }
+.pick-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.pick-tools label { flex: 1 1 150px; min-width: 0; display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.pick-tools select { width: 100%; font-size: 16px; }
+.pick-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.pick-target .chip:disabled { opacity: .45; cursor: default; }
+.post-chat { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg2); }
+.post-chat-log { display: flex; flex-direction: column; gap: 8px; height: min(46vh, 460px); min-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.post-chat-msg { flex: none; display: grid; gap: 8px; margin: 0; max-width: 90%; padding: 8px 11px; border-radius: 12px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.post-chat-msg.ai { align-self: flex-start; background: var(--card); border: 1px solid var(--line); }
+.post-chat-msg.me { align-self: flex-end; background: var(--violet, #7c3aed); color: #fff; }
+.post-chat-msg.err { align-self: flex-start; border: 1px solid #ef4444; color: var(--text); }
+.chat-ref, .chat-result { display: block; border-radius: 8px; max-width: 100%; }
+.chat-ref { max-height: 120px; }
+.chat-result { width: 150px; }
+.chat-photos { display: grid; gap: 6px; width: min(330px, 62vw); white-space: normal; }
+.chat-photos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.chat-photos button { padding: 0; aspect-ratio: 1; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: #0b1324; cursor: pointer; }
+.chat-photos button:hover:not(:disabled), .chat-photos button:focus-visible { border-color: var(--violet, #7c3aed); }
+.chat-photos button:disabled { opacity: .55; cursor: default; }
+.chat-photos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chat-photos small { color: var(--muted); font-size: 11px; }
+.chat-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.chat-chips .chip { flex: none; font-size: 12.5px; white-space: nowrap; }
+.chat-chips .chat-idea { border-color: var(--violet, #7c3aed); }
+.chat-attached { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.chat-attached img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.post-chat-form { display: grid; gap: 8px; }
+.post-chat-form textarea { width: 100%; min-width: 0; font-size: 16px; resize: vertical; }
+.post-chat-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.post-chat-tools .btn.primary { margin-left: auto; }
+@media (max-width: 1000px) {
+  .pick-work { grid-template-columns: minmax(0, 1fr); }
+  .pick-side { position: static; }
+}
+.post-chat-cap summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.post-chat-cap p { margin: 8px 0 0; max-height: 180px; overflow-y: auto; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }

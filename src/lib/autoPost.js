@@ -4,6 +4,7 @@ import { PLATFORMS, newLayer, uid } from './formats.js'
 import { FX_DEFAULT, renderToDataURL } from './render.js'
 import { generateCaptionAI, generateImageAI, generateLayerTextsAI, shrinkImage, suggestHashtags } from './social.js'
 import { BG_PRESETS, BRAND, buildContent } from './brand.js'
+import { buildDesign, pickDeco, DECOS } from './designs.js'
 import { vetImage } from './imageQuality.js'
 import { t } from './i18n.jsx'
 
@@ -11,19 +12,6 @@ const pick = (a) => a[Math.floor(Math.random() * a.length)]
 const URL_RE = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9-]+\.(?:cl|com|net|org|io|co|app|dev)\b[^\s]*)/i
 const toLocalInput = (ts) => new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
-// Parte un texto en líneas de como máximo `max` caracteres (para que cada punto quede ordenado junto a su viñeta)
-function breakLines(text, max) {
-  const out = []
-  let line = ''
-  for (const w of text.split(' ')) {
-    if (line && (line + ' ' + w).length > max) { out.push(line); line = w } else line = line ? line + ' ' + w : w
-  }
-  if (line) out.push(line)
-  return out
-}
-
-// Diseño informativo moderno y empresarial: etiqueta en píldora + título + puntos con viñeta + web en píldora.
-// Solo tipografías sobrias (Montserrat para títulos, Inter para el texto).
 // Paletas empresariales (no solo azul): fondo en degradado + color de acento + descripción para la imagen de IA
 export const PALETTES = [
   { id: 'blue', dark: true, c1: '#020618', c2: '#0f2a5c', c3: '#1d6fb8', angle: 160, accent: '#38bdf8', ai: 'vivid electric blue and bright cyan with luminous white highlights and a few navy shadows' },
@@ -59,11 +47,12 @@ const HUE_NAMES = [[12, 'red'], [40, 'orange'], [62, 'golden yellow'], [80, 'lim
 const hueName = (h) => HUE_NAMES.find(([m]) => ((h % 360) + 360) % 360 < m)[1]
 
 /** Paleta nueva a partir de un tono (al azar si no se da). Mismo formato que PALETTES. */
-export function makePalette({ hue, dark = true, avoid } = {}) {
+export function makePalette({ hue, dark = true, avoid, exact = false } = {}) {
   let h = hue ?? Math.random() * 360
   if (hue == null && avoid != null) { let n = 0; while (Math.abs(((h - avoid + 540) % 360) - 180) < 40 && n++ < 20) h = Math.random() * 360 }
   h = Math.round(h)
-  const ah = Math.round(h + pick([0, 0, 30, -30, 180, 150, -150]))
+  // `exact`: el usuario pidió un color, así que el acento es justo ese
+  const ah = exact ? h : Math.round(h + pick([0, 0, 30, -30, 180, 150, -150]))
   // tonos amarillo-verdosos y naranjas: el fondo se mantiene grafito (tintar el fondo con ellos se ve sucio) y el color va en el acento
   const neutral = h >= 20 && h <= 110
   const bh = neutral ? 218 : h
@@ -112,65 +101,6 @@ export function dominantHue(dataUrl) {
   })
 }
 
-function infoDesign({ kicker, title, points, link, palette }) {
-  const pre = palette || pick(PALETTES)
-  const dark = pre.dark
-  const accent = pre.accent
-  const ink = dark ? '#0b1b3f' : '#ffffff' // texto sobre elementos de acento
-  const pal = dark ? { title: '#ffffff', body: '#e2e8f0' } : { title: '#111827', body: '#1f2937' }
-  const H = 1350
-
-  // Tamaño del texto de los puntos: el mayor que quepa en el espacio disponible
-  const room = 0.56 * H
-  let size = 30, items = []
-  for (const sz of [38, 34, 30]) {
-    const max = Math.floor(820 / (sz * 0.54))
-    const its = points.map((p) => breakLines(p, max))
-    const need = its.reduce((a, l) => a + l.length * sz * 1.15, 0) + (its.length - 1) * sz * 0.95
-    size = sz; items = its
-    if (need <= room) break
-  }
-  const lh = size * 1.15, gap = size * 0.95
-  const total = items.reduce((a, l) => a + l.length * lh, 0) + (items.length - 1) * gap
-  let y = 0.585 * H - total / 2
-  const rows = []
-  items.forEach((lines) => {
-    const h = lines.length * lh
-    rows.push({ lines, mid: (y + h / 2) / H, first: (y + lh / 2) / H })
-    y += h + gap
-  })
-
-  return {
-    format: 'ig-portrait',
-    bg: { type: 'gradient', c1: pre.c1, c2: pre.c2, c3: pre.c3, angle: pre.angle, image: null, dim: 0 },
-    accent: { show: true, color: accent },
-    layers: [
-      // Marca de agua de Global Zion: grande, muy tenue y en diagonal, detrás del contenido
-      newLayer({ text: 'GLOBAL ZION', y: 0.5, size: 124, color: dark ? '#ffffff' : '#0f172a', font: 'Plus Jakarta Sans', weight: 800, rot: -22, opacity: dark ? 0.065 : 0.07, shadow: false, wm: true }),
-      newLayer({ text: kicker, y: 0.085, size: 31, color: ink, bg: accent, shape: 'pill', font: 'Plus Jakarta Sans', weight: 600, upper: false, shadow: false }),
-      newLayer({ text: title, y: 0.2, size: title.length > 26 ? 66 : 80, color: pal.title, font: 'Montserrat', weight: 800, shadow: dark }),
-      ...rows.flatMap((r) => [
-        newLayer({ text: '✓', x: 0.105, y: r.first, size: 22, color: ink, bg: accent, shape: 'circle', font: 'Montserrat', weight: 800, shadow: false }),
-        newLayer({ text: r.lines.join('\n'), x: 0.155, y: r.mid, size, color: pal.body, font: 'Inter', weight: 500, align: 'left', shadow: false }),
-      ]),
-      newLayer({ text: link, y: 0.935, size: 37, color: ink, bg: accent, shape: 'pill', font: 'Inter', weight: 600, shadow: false }),
-    ],
-  }
-}
-
-// Ícono grande y translúcido de fondo según el tema de la publicación
-const GLYPH = { wordpress: '🌐', plans: '💼', time: '⏱️', speed: '⚡', maintenance: '🛠️', security: '🛡️', store: '🛒', how: '🧭', trust: '🤝', growth: '📈' }
-
-// Fondo hecho con las herramientas de la app (formas, anillo de carga y emoji translúcidos): siempre se ve limpio y nítido
-function decorLayers(accent, glyph) {
-  return [
-    newLayer({ text: ' ', shape: 'circle', bg: accent + '24', x: 0.93, y: 0.07, size: 230, shadow: false }),
-    newLayer({ text: ' ', shape: 'ring', bg: accent + '0d', fill: accent + '66', progress: 72, x: 0.06, y: 0.93, size: 260, shadow: false }),
-    newLayer({ text: ' ', shape: 'burst', bg: accent + '2e', x: 0.9, y: 0.76, size: 70, rot: 12, shadow: false }),
-    newLayer({ text: glyph, x: 0.82, y: 0.58, size: 420, opacity: 0.09, shadow: false }),
-  ]
-}
-
 /**
  * Intenta armar la variante con foto de IA: hasta 2 imágenes, cada una debe aprobar el filtro de píxeles y la revisión de visión.
  * Devuelve { design, why }: design es null si ninguna imagen aprobó (why = motivos del rechazo).
@@ -191,32 +121,73 @@ export async function photoVariant(base, { prompt, context, info, onStep = () =>
   }
   if (!good) return { design: null, why }
   const img = await shrinkImage(good, 1080)
-  // Los colores de los textos y del acento se toman de la imagen para que combinen con ella
-  let look = base
+  // El color de acento se toma de la imagen para que combine con ella; cada foto estrena una composición distinta
+  let palette = base.auto.palette
   try {
     const hue = await dominantHue(img || good)
-    if (hue != null && info) {
-      const pal = makePalette({ hue, dark: true })
-      look = { ...infoDesign({ kicker: info.kicker, title: info.title, points: info.points, link: info.link, palette: { ...pal, accent: hsl(hue, 85, 64) } }), bg: base.bg }
-    }
-  } catch { /* se conserva el diseño base */ }
+    if (hue != null) palette = { ...makePalette({ hue, dark: true }), accent: hsl(hue, 85, 64) }
+  } catch { /* se conservan los colores base */ }
+  return { why: [], design: photoDesign(base, info, img || good, palette) }
+}
+
+/** Diseño con una foto de fondo (de la IA o de la web), oscurecida para que los textos se lean. */
+export function photoDesign(base, info, image, palette = base.auto.palette, options = {}) {
+  const look = buildDesign({ info, palette, photo: true, ...options })
   return {
-    why: [],
-    design: {
-      ...look,
-      bg: { ...base.bg, type: 'image', image: img || good, dim: 0.6, fx: { ...FX_DEFAULT, detail: 30, contrast: 108, saturate: 105, vignette: 28 } },
-      layers: look.layers.map((l) => (l.wm ? { ...l, color: '#ffffff' } : l.bg ? l : { ...l, color: '#ffffff', shadow: true })),
-    },
+    ...look,
+    bg: { ...look.bg, prompt: base.bg.prompt, scene: base.bg.scene, type: 'image', image, dim: 0.58, fx: { ...FX_DEFAULT, detail: 30, contrast: 108, saturate: 105, vignette: 28 } },
   }
 }
 
-/** Vuelve a armar la plantilla B (fondo con las herramientas de la app) con otra paleta empresarial, sin usar IA. */
+/** Foto elegida de la web como fondo: el color de acento se toma de la propia foto. */
+export async function webPhotoVariant(base, { image, info }) {
+  let palette = base.auto.palette
+  try {
+    const hue = await dominantHue(image)
+    if (hue != null) palette = { ...makePalette({ hue, dark: true }), accent: hsl(hue, 85, 64) }
+  } catch { /* se conservan los colores base */ }
+  return photoDesign(base, info, image, palette)
+}
+
+// Tono (0-360) de un color #rrggbb
+function hexHue(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const mx = Math.max(r, g, b), d = mx - Math.min(r, g, b)
+  if (!d) return 215
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return Math.round((h * 60 + 360) % 360)
+}
+
+/**
+ * Cambia el aspecto de un diseño ya armado. `change` admite: layout (id de composición), mode ('dark'|'light'),
+ * hue (0-360), logo ('light'|'dark'), deco (patrón o 'none') y removePhoto. Lo que no venga se mantiene.
+ */
+export function restyle(design, info, change = {}) {
+  const was = design.auto
+  const photo = was.photo && !change.removePhoto
+  let { palette } = was
+  if (change.hue != null || change.mode || change.removePhoto) {
+    const hue = change.hue ?? palette.hue ?? hexHue(palette.accent)
+    palette = makePalette({ hue, dark: change.mode ? change.mode === 'dark' : palette.dark, exact: change.hue != null })
+  }
+  const deco = change.deco === 'none' ? null : DECOS.includes(change.deco) ? change.deco : design.bg.deco?.type || pickDeco()
+  const d = buildDesign({ info, palette, layout: change.layout || was.layout, logo: change.logo || was.logo, photo, deco })
+  if (photo) return { ...d, bg: design.bg }
+  return { ...d, bg: { ...d.bg, prompt: design.bg.prompt, scene: design.bg.scene } }
+}
+
+/** Vuelve a armar la plantilla B (fondo con las herramientas de la app) con otra composición y paleta, sin usar IA. */
 export function toolsVariant(info) {
-  const dark = Math.random() < 0.85
+  const dark = Math.random() < 0.75
   const palette = makePalette({ dark, avoid: info.hue })
-  const d = infoDesign({ kicker: info.kicker, title: info.title, points: info.points, link: info.link, palette })
-  const base = { ...d, bg: { ...d.bg, prompt: info.prompt, scene: info.scene } }
-  return { design: { ...base, layers: [...decorLayers(base.accent.color, info.glyph), ...base.layers] }, palette: palette.id, hue: palette.hue }
+  const d = buildDesign({ info, palette })
+  return { design: { ...d, bg: { ...d.bg, prompt: info.prompt, scene: info.scene } }, palette: palette.id, hue: palette.hue }
+}
+
+/** Cambia los textos de un diseño ya armado (chat de correcciones) sin tocar su composición, colores ni fondo. */
+export function retext(design, info) {
+  const { layout, palette, photo, logo } = design.auto
+  return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, deco: null }).layers }
 }
 
 /** Devuelve el estado completo del Composer (misma forma que su trabajo en curso). `text` puede ir vacío. */
@@ -240,27 +211,28 @@ export async function generateAutoPost({ text = '', platforms, withImage, onStep
       if (ti && ti.length <= 44) title = ti
     } catch { /* se conservan los textos de la web */ }
   }
-  // Paleta: ~85 % oscuras; se varía el color para no repetir siempre el azul
-  const wantDark = Math.random() < 0.85
+  // Paleta: ~75 % oscuras; se varía el color para no repetir siempre el azul
+  const wantDark = Math.random() < 0.75
   const palette = Math.random() < 0.8 ? makePalette({ dark: wantDark }) : pick(PALETTES.filter((p) => p.dark === wantDark))
-  let design = infoDesign({ kicker, title, points: c.points, link, palette })
+  const content = { kicker, title, points: c.points, link }
+  let design = buildDesign({ info: content, palette })
 
   // 2 · Dos opciones de fondo: A) foto de IA (solo si aprueba el control de calidad) y B) hecho con las herramientas de la app
-  const prompt = `${userText ? 'Idea: ' + userText.replace(URL_RE, '').trim() + '. ' : ''}Premium corporate social media background about web design and website creation: ${Math.random() < 0.75 ? pick(PHOTO_SCENES) : c.scene}. Color palette: ${palette.ai}, well lit, bright mid-tones, strong contrast, sharp details, professional business look, modern, clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks, nothing readable on any screen. No people, faces or hands.`
+  const prompt = `${userText ? 'Idea: ' + userText.replace(URL_RE, '').trim() + '. ' : ''}Premium corporate social media background about ${c.about}:${Math.random() < 0.75 ? pick(PHOTO_SCENES) : c.scene}. Color palette: ${palette.ai}, well lit, bright mid-tones, strong contrast, sharp details, professional business look, modern, clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks, nothing readable on any screen. No people, faces or hands.`
   // Se memoriza lo que escribió el usuario (o el tema elegido) para poder regenerar la imagen desde el editor
   const baseDesign = { ...design, bg: { ...design.bg, prompt: userText || c.title, scene: c.scene } }
-  const toolsDesign = { ...baseDesign, layers: [...decorLayers(baseDesign.accent.color, GLYPH[c.angle.id] || '🌐'), ...baseDesign.layers] }
   const context = userText || c.title
-  let options = null
+  const info = { ...content, prompt: userText || c.title, scene: c.scene, palette: palette.id, hue: palette.hue }
+  const options = { photo: null, why: null, base: baseDesign, prompt, context, info }
   if (withImage) {
-    const info = { kicker, title, points: c.points, link, glyph: GLYPH[c.angle.id] || '🌐', prompt: userText || c.title, scene: c.scene, palette: palette.id, hue: palette.hue }
     // Plazo total: si la imagen de IA se demora, se sigue con la opción B en vez de dejar todo cargando
     let timer
     const late = new Promise((res) => { timer = setTimeout(() => res({ design: null, why: [t('la imagen de IA tardó demasiado')] }), 150000) })
     const r = await Promise.race([photoVariant(baseDesign, { prompt, context, info, onStep }), late]).finally(() => clearTimeout(timer))
-    options = { photo: r.design, why: r.why, base: baseDesign, prompt, context, info }
+    options.photo = r.design
+    options.why = r.design ? null : r.why
   }
-  design = toolsDesign
+  design = baseDesign
 
   // 3 · Texto de la publicación + hashtags de marca
   onStep(t('Redactando el texto de la publicación…'))

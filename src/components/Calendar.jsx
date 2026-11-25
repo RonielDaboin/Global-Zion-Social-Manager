@@ -5,6 +5,7 @@ import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon, StatusTag } from './ui.jsx'
 import { loadVideo, saveVideo } from '../lib/mediaStore.js'
 import PostPreview from './PostPreview.jsx'
+import DeleteDialog from './DeleteDialog.jsx'
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
@@ -43,16 +44,28 @@ export default function Calendar({ edit }) {
   const [day, setDay] = useState(null)
   const dayPosts = day ? forDay(day).sort((a, b) => new Date(when(a)) - new Date(when(b))) : []
   const closeDay = () => setDay(null)
-  const duplicate = async (p) => {
+  const [del, setDel] = useState(null)
+  // Copia la publicación como borrador; devuelve la copia (o null si no se pudo)
+  const copyAsDraft = async (p) => {
     const id = Math.random().toString(36).slice(2, 9)
     if (p.mediaType === 'video') {
       let b = null
       try { b = await loadVideo(p.id); if (b) await saveVideo(id, b) } catch { /* ignore */ }
-      if (!b) return notify(t('El video de esta publicación ya no se guarda: solo queda una captura de referencia.'), 'err')
+      if (!b) { notify(t('El video de esta publicación ya no se guarda: solo queda una captura de referencia.'), 'err'); return null }
     }
     const { results, publishedAt, publishedBy, ...rest } = p
-    savePost({ ...rest, id, status: 'draft', scheduledAt: null, createdAt: when(p) + 1000 })
-    notify(t('Publicación duplicada como borrador'))
+    const copy = { ...rest, id, status: 'draft', scheduledAt: null, createdAt: when(p) + 1000 }
+    savePost(copy)
+    return copy
+  }
+  const duplicate = async (p) => { if (await copyAsDraft(p)) notify(t('Publicación duplicada como borrador')) }
+  // Lo ya publicado no se puede modificar en la red: se edita una copia en borrador
+  const editPost = async (p) => {
+    if (p.status !== 'published') { edit(p); return closeDay() }
+    const copy = await copyAsDraft(p)
+    if (!copy) return
+    notify(t('Ya está publicada: estás editando una copia en borrador.'))
+    edit(copy); closeDay()
   }
   const schedule = (p, ts) => { savePost({ ...p, status: 'scheduled', scheduledAt: ts }); notify(t('Publicación programada')) }
   const MAX = 2
@@ -117,9 +130,15 @@ export default function Calendar({ edit }) {
       {day && (
         <DayViewer
           date={new Date(y, m, day)} posts={dayPosts} when={when} hm={hm}
-          onOpen={setOpen} onClose={closeDay} suspended={!!open}
+          onOpen={setOpen} onClose={closeDay} suspended={!!open || !!del}
           onDuplicate={duplicate} onSchedule={schedule}
-          onEdit={(p) => { edit(p); closeDay() }}
+          onEdit={editPost} onDelete={setDel}
+        />
+      )}
+      {del && (
+        <DeleteDialog
+          p={del} onClose={() => setDel(null)}
+          onDeleted={() => { if (dayPosts.length <= 1) closeDay(); notify(t('Publicación eliminada')) }}
         />
       )}
       {open && (
@@ -138,7 +157,7 @@ export default function Calendar({ edit }) {
 
 const toLocalInput = (ts) => new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
-function DayViewer({ date, posts, when, hm, onOpen, onEdit, onDuplicate, onSchedule, onClose, suspended }) {
+function DayViewer({ date, posts, when, hm, onOpen, onEdit, onDelete, onDuplicate, onSchedule, onClose, suspended }) {
   useLang()
   const [sch, setSch] = useState(null) // { id, value }
   useEffect(() => {
@@ -174,8 +193,9 @@ function DayViewer({ date, posts, when, hm, onOpen, onEdit, onDuplicate, onSched
               </button>
               <div className="dv-acts">
                 <button className="btn ghost sm" onClick={() => onDuplicate(p)}><Icon name="copy" size={14} /> {t('Duplicar')}</button>
-                {editable(p) && <button className="btn ghost sm" onClick={() => onEdit(p)}><Icon name="edit" size={14} /> {t('Editar')}</button>}
+                {p.status !== 'publishing' && <button className="btn ghost sm" onClick={() => onEdit(p)}><Icon name="edit" size={14} /> {t('Editar')}</button>}
                 {editable(p) && <button className="btn ghost sm" onClick={() => (sch?.id === p.id ? setSch(null) : startSch(p))}><Icon name="clock" size={14} /> {t('Programar')}</button>}
+                {p.status !== 'publishing' && <button className="btn danger sm" onClick={() => onDelete(p)}><Icon name="trash" size={14} /> {t('Eliminar')}</button>}
               </div>
               {sch?.id === p.id && (
                 <div className="dv-sch">

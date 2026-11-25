@@ -49,6 +49,10 @@ function drawCaret(ctx, b, pos, color, size) {
   ctx.restore()
 }
 
+const isShape = (l) => !!(l?.logo || l?.brand || l?.box) // logos y rectángulos: sin texto
+// Al cambiar el tamaño a mano deja de limitarse el alto (si no, el ajuste automático impediría agrandar la letra)
+const resized = (l, size) => (l.fit ? { ...l, size, fit: { w: l.fit.w } } : { ...l, size })
+
 let layerClip = null // portapapeles interno de elementos (Ctrl+C / Ctrl+X / Ctrl+V)
 
 export default function ImageEditor({ design, setDesign }) {
@@ -214,10 +218,10 @@ export default function ImageEditor({ design, setDesign }) {
         const H = handlesOf(layer, b)
         const near = (q, r) => Math.hypot(p.x - q.x, p.y - q.y) <= r
         if (near(H.rot, 50)) { drag.current = { id: layer.id, kind: 'rot', cx: H.cx, cy: H.cy }; e.currentTarget.setPointerCapture(e.pointerId); return }
-        if (near(H.scl, 46)) { drag.current = { id: layer.id, kind: 'scl', cx: H.cx, cy: H.cy, d0: Math.hypot(H.scl.x - H.cx, H.scl.y - H.cy), size0: layer.size }; e.currentTarget.setPointerCapture(e.pointerId); return }
+        if (near(H.scl, 46)) { drag.current = { id: layer.id, kind: 'scl', cx: H.cx, cy: H.cy, d0: Math.hypot(H.scl.x - H.cx, H.scl.y - H.cy), size0: b.fs || layer.size }; e.currentTarget.setPointerCapture(e.pointerId); return }
       }
     }
-    const hit = [...boxes.current].reverse().find((b) => p.x >= b.x - 30 && p.x <= b.x + b.w + 30 && p.y >= b.y - 30 && p.y <= b.y + b.h + 30)
+    const hit = [...boxes.current].reverse().find((b) => !b.lock && p.x >= b.x - 30 && p.x <= b.x + b.w + 30 && p.y >= b.y - 30 && p.y <= b.y + b.h + 30)
     if (hit) {
       setSel(hit.id)
       wrapRef.current?.focus({ preventScroll: true })
@@ -239,8 +243,8 @@ export default function ImageEditor({ design, setDesign }) {
       return
     }
     if (d.kind === 'scl') {
-      const size = Math.min(400, Math.max(20, Math.round((d.size0 * Math.hypot(p.x - d.cx, p.y - d.cy)) / d.d0)))
-      setDesign({ ...design, layers: design.layers.map((l) => (l.id === d.id ? { ...l, size } : l)) })
+      const size = Math.min(1000, Math.max(20, Math.round((d.size0 * Math.hypot(p.x - d.cx, p.y - d.cy)) / d.d0)))
+      setDesign({ ...design, layers: design.layers.map((l) => (l.id === d.id ? resized(l, size) : l)) })
       return
     }
     let x = Math.min(1, Math.max(0, (p.x - d.dx) / fmt.w))
@@ -276,8 +280,8 @@ export default function ImageEditor({ design, setDesign }) {
     }
     if (!layer || inField) return
     if (e.key === 'Delete') { e.preventDefault(); delLayer(); return } // Supr elimina el elemento seleccionado
-    if (e.key === 'Enter') { e.preventDefault(); wantFocus.current = true; setTick((n) => n + 1); return }
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { // escribir directamente edita el texto
+    if (e.key === 'Enter' && !isShape(layer)) { e.preventDefault(); wantFocus.current = true; setTick((n) => n + 1); return }
+    if (!isShape(layer) && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { // escribir directamente edita el texto
       e.preventDefault()
       wantFocus.current = true
       patchLayer({ text: layer.text + e.key })
@@ -368,7 +372,7 @@ export default function ImageEditor({ design, setDesign }) {
     if (!lim.aiImage) return openPlans(t('Las imágenes con IA están disponibles en el plan Premium.'))
     setAiBusy(true); setAiErr('')
     try {
-      const titles = design.layers.filter((l) => !l.bg && l.text.trim()).slice(0, 2).map((l) => l.text.replace(/\n/g, ' ')).join(' - ')
+      const titles = design.layers.filter((l) => !l.bg && !l.panel && l.text.trim()).slice(0, 2).map((l) => l.text.replace(/\n/g, ' ')).join(' - ')
       const idea = aiIdea.trim() || design.bg.prompt || titles
       const scene = design.bg.scene ? ` Scene: ${design.bg.scene}.` : ''
       const base = idea
@@ -394,7 +398,7 @@ export default function ImageEditor({ design, setDesign }) {
       const light = !wasImg && lum(design.bg.c1) > 0.6 // texto oscuro sobre fondo claro: pasa a blanco para leerse sobre la foto
       setBgImage(best, wasImg ? design.bg.dim : 0.6, true,
         { prompt: idea, scene: design.bg.scene, tweak, ...(wasImg ? {} : { fx: { ...FX_DEFAULT, detail: 30, contrast: 108, saturate: 105, vignette: 28 } }) },
-        light ? (l) => (l.bg ? l : { ...l, color: '#ffffff', shadow: true }) : null)
+        light ? (l) => (l.bg || l.logo || l.brand || l.panel ? l : { ...l, color: '#ffffff', shadow: true }) : null)
       if (!ok) setAiErr(t('Tras 3 intentos la imagen sigue con baja calidad ({r}). Puedes volver a pulsar el botón.', { r: lastWhy.join(', ') }))
     } catch (e) { setAiErr(e.message || String(e)) }
     setAiBusy(false)
@@ -407,9 +411,11 @@ export default function ImageEditor({ design, setDesign }) {
     setTxtBusy(true); setTxtErr('')
     try {
       const layers = design.layers
-      const texts = await generateLayerTextsAI({ layers, topic: txtTopic.trim() })
+      const written = layers.filter((l) => !isShape(l) && l.text.trim()) // el logo y los rectángulos no llevan texto
+      const texts = await generateLayerTextsAI({ layers: written, topic: txtTopic.trim() })
       aiTextBump(session?.id)
-      setDesign({ ...design, layers: layers.map((l, i) => (texts[i] ? { ...l, text: texts[i] } : l)) })
+      const byId = new Map(written.map((l, i) => [l.id, texts[i]]))
+      setDesign({ ...design, layers: layers.map((l) => (byId.get(l.id) ? { ...l, text: byId.get(l.id) } : l)) })
     } catch (e) { setTxtErr(e.message || String(e)) }
     setTxtBusy(false)
   }
@@ -599,12 +605,13 @@ export default function ImageEditor({ design, setDesign }) {
           <div className="chips">
             {design.layers.map((l, i) => (
               <button key={l.id} className={'chip' + (l.id === sel ? ' on' : '')} onClick={() => setSel(l.id)}>
-                {i + 1}. {l.text.replace(/\n/g, ' ').slice(0, 14) || t('(vacío)')}
+                {i + 1}. {l.logo || l.brand ? 'Logo' : l.box ? t('Rectángulo') : l.text.replace(/\n/g, ' ').slice(0, 14) || t('(vacío)')}
               </button>
             ))}
           </div>
           {layer && (
             <div className="layer-ed">
+              {!isShape(layer) && <>
               <textarea ref={layerTxt} rows={2} value={layer.text} onChange={(e) => { patchLayer({ text: e.target.value }); setCaretPos(e.target.selectionStart) }}
                 onFocus={(e) => { setEditing(true); setCaretPos(e.target.selectionStart) }} onBlur={() => setEditing(false)}
                 onSelect={(e) => setCaretPos(e.target.selectionStart)} onKeyUp={(e) => setCaretPos(e.target.selectionStart)}
@@ -620,13 +627,29 @@ export default function ImageEditor({ design, setDesign }) {
                 </select>
                 <input type="color" value={layer.color} onChange={(e) => patchLayer({ color: e.target.value })} />
               </div>
-              <label className="inl"><span className="lbl">{t('Tamaño')} <b>{layer.size}</b></span><input type="range" min="20" max="400" value={layer.size} onChange={(e) => patchLayer({ size: +e.target.value })} /></label>
+              </>}
+              {layer.box && <label className="check">{t('Color')} <input type="color" value={(layer.bg || '#ffffff').slice(0, 7)} onChange={(e) => patchLayer({ bg: e.target.value + (layer.bg || '').slice(7) })} /></label>}
+              {layer.brand && <>
+                <label className="inl"><span className="lbl">{t('Versión del logo')}</span>
+                  <select value={layer.brand} onChange={(e) => patchLayer({ brand: e.target.value })} style={{ width: 'auto' }}>
+                    <option value="light">{t('Clara')}</option>
+                    <option value="dark">{t('Oscura')}</option>
+                  </select>
+                </label>
+                <label className="check"><input type="checkbox" checked={!!layer.plate} onChange={(e) => patchLayer({ plate: e.target.checked })} /> {t('Con placa de fondo')}</label>
+              </>}
+              {layer.logo && <label className="inl"><span className="lbl">{t('Fondo del logo')}</span>
+                <select value={layer.badge || ''} onChange={(e) => patchLayer({ badge: e.target.value })} style={{ width: 'auto' }}>
+                  <option value="tile">{t('Blanco')}</option><option value="ring">{t('Aro de colores')}</option><option value="">{t('Sin fondo')}</option>
+                </select>
+              </label>}
+              <label className="inl"><span className="lbl">{t('Tamaño')} <b>{layer.size}</b></span><input type="range" min="20" max={layer.logo || layer.brand ? 1000 : 400} value={layer.size} onChange={(e) => patch({ layers: design.layers.map((l) => (l.id === sel ? resized(l, +e.target.value) : l)) })} /></label>
               <div className="row">
                 <label className="inl grow">X<input type="range" min="0" max="1" step="0.01" value={layer.x} onChange={(e) => patchLayer({ x: +e.target.value })} /></label>
                 <label className="inl grow">Y<input type="range" min="0" max="1" step="0.01" value={layer.y} onChange={(e) => patchLayer({ y: +e.target.value })} /></label>
               </div>
               <div className={'collapse' + (mode === 'adv' ? ' open' : '')} aria-hidden={mode !== 'adv'}><div className="collapse-in">
-                <div className="row" style={{ alignItems: 'center', margin: '4px 0' }}>
+                {!isShape(layer) && <div className="row" style={{ alignItems: 'center', margin: '4px 0' }}>
                   <label className="check"><input type="checkbox" checked={!!layer.bg} onChange={(e) => patchLayer({ bg: e.target.checked ? (layer.bg || '#ef4444') : '', shape: layer.shape || 'pill' })} /> {t('Fondo del texto')}</label>
                   {layer.bg && <>
                     <input type="color" value={layer.bg} onChange={(e) => patchLayer({ bg: e.target.value })} />
@@ -634,7 +657,7 @@ export default function ImageEditor({ design, setDesign }) {
                       {[['pill', 'Píldora'], ['rect', 'Rectángulo'], ['circle', 'Círculo'], ['ring', 'Anillo'], ['burst', 'Sello'], ['star', 'Estrella']].map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}
                     </select>
                   </>}
-                </div>
+                </div>}
                 {layer.progress != null && (
                   <div className="row" style={{ alignItems: 'center', margin: '4px 0' }}>
                     <label className="inl grow"><span className="lbl">{t('Progreso')} <b>{layer.progress}%</b></span><input type="range" min="0" max="100" value={layer.progress} onChange={(e) => patchLayer({ progress: +e.target.value, text: layer.text.replace(/\d+(?=%)/, e.target.value) })} /></label>
@@ -645,11 +668,13 @@ export default function ImageEditor({ design, setDesign }) {
                 <label className="inl"><span className="lbl">{t('Rotación')} <b>{layer.rot || 0}°</b></span><input type="range" min="-180" max="180" value={layer.rot || 0} onChange={(e) => patchLayer({ rot: +e.target.value })} onDoubleClick={() => patchLayer({ rot: 0 })} /></label>
               </div></div>
               <div className="row toolbar">
+                {!isShape(layer) && <>
                 <div className="seg">
                   {['left', 'center', 'right'].map((a) => <button key={a} className={layer.align === a ? 'on' : ''} onClick={() => patchLayer({ align: a })}>{{ left: '⇤', center: '↔', right: '⇥' }[a]}</button>)}
                 </div>
                 <label className="check"><input type="checkbox" checked={layer.shadow} onChange={(e) => patchLayer({ shadow: e.target.checked })} /> {t('Sombra')}</label>
                 <label className="check"><input type="checkbox" checked={layer.upper} onChange={(e) => patchLayer({ upper: e.target.checked })} /> {t('MAYÚS')}</label>
+                </>}
                 <button className="btn danger sm" onClick={delLayer}><Icon name="trash" size={14} /></button>
               </div>
             </div>

@@ -14,8 +14,15 @@ export function loadImage(src) {
   return p
 }
 
+// Logo de Global Zion que se dibuja en las publicaciones (capas con `logo` y fondo «logo»)
+export const LOGO_SRC = '/logo.webp'
+let logoImg = null
+const loadLogo = () => loadImage(LOGO_SRC).then((im) => { logoImg = im })
+
 export async function ensureFonts(design) {
+  if (design.bg.deco?.type === 'logo' || design.layers.some((l) => l.logo || l.brand)) await loadLogo()
   const fonts = [...new Set(design.layers.map((l) => `${l.weight} 40px "${l.font}"`))]
+  if (design.layers.some((l) => l.brand)) fonts.push('600 40px "Plus Jakarta Sans"')
   try {
     await Promise.all(fonts.map((f) => document.fonts.load(f)))
   } catch { /* ignore */ }
@@ -36,6 +43,125 @@ function wrap(ctx, text, maxW) {
     out.push(line)
   }
   return out
+}
+
+/** Patrón decorativo del fondo, en el color de acento. Se dibuja bajo los textos. */
+function drawDeco(ctx, deco, w, h, k) {
+  const c = /^#[0-9a-f]{6}/i.test(deco.color) ? deco.color.slice(0, 7) : '#38bdf8'
+  const dot = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2) }
+  const halo = (x, y, r, alpha) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r)
+    g.addColorStop(0, c + alpha); g.addColorStop(1, c + '00')
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2)
+  }
+  ctx.save()
+  if (deco.type === 'rings') {
+    halo(w, 0, w * 0.7, '40')
+    ctx.strokeStyle = c + '2b'; ctx.lineWidth = 3 * k
+    for (let i = 1; i <= 5; i++) { dot(w * 0.96, h * 0.05, i * 105 * k); ctx.stroke() }
+    ctx.lineWidth = 46 * k; ctx.strokeStyle = c + '24'; dot(w * 0.03, h * 0.97, 190 * k); ctx.stroke()
+  } else if (deco.type === 'dots') {
+    halo(0, h, w * 0.75, '36')
+    const step = 46 * k
+    for (let y = step; y < h; y += step) {
+      for (let x = step; x < w; x += step) {
+        const f = Math.max(0, x / w - y / h + 0.25) // más densos hacia la esquina superior derecha
+        if (f > 0.05) { ctx.globalAlpha = Math.min(0.5, f * 0.55); ctx.fillStyle = c; dot(x, y, 4 * k); ctx.fill() }
+      }
+    }
+  } else if (deco.type === 'grid') {
+    halo(w * 0.5, 0, w * 0.8, '3d')
+    ctx.strokeStyle = c + '1c'; ctx.lineWidth = 2 * k
+    const step = 90 * k
+    ctx.beginPath()
+    for (let x = step / 2; x < w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h) }
+    for (let y = step / 2; y < h; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y) }
+    ctx.stroke()
+  } else if (deco.type === 'diagonal') {
+    const band = (a, b, alpha) => { ctx.fillStyle = c + alpha; ctx.beginPath(); ctx.moveTo(w * a, 0); ctx.lineTo(w * b, 0); ctx.lineTo(w * b - h * 0.45, h); ctx.lineTo(w * a - h * 0.45, h); ctx.fill() }
+    band(0.74, 0.9, '20'); band(0.94, 0.985, '40'); band(1.08, 1.36, '17'); band(0.6, 0.625, '2b')
+  } else if (deco.type === 'waves') {
+    const wave = (top, amp, alpha) => {
+      ctx.fillStyle = c + alpha; ctx.beginPath(); ctx.moveTo(0, h * top)
+      ctx.bezierCurveTo(w * 0.3, h * (top - amp), w * 0.65, h * (top + amp), w, h * (top - amp * 0.5))
+      ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.fill()
+    }
+    halo(w, 0, w * 0.65, '30')
+    wave(0.76, 0.09, '14'); wave(0.84, 0.07, '1f'); wave(0.92, 0.05, '2e')
+  } else if (deco.type === 'glow') {
+    halo(w * 0.05, h * 0.12, w * 0.75, '59'); halo(w, h * 0.55, w * 0.65, '3d'); halo(w * 0.25, h, w * 0.7, '33')
+  } else if (deco.type === 'blobs') {
+    ctx.fillStyle = c + '26'; dot(w * 0.98, h * 0.04, 270 * k); ctx.fill()
+    ctx.fillStyle = c + '1a'; dot(w * 0.02, h * 0.62, 150 * k); ctx.fill()
+    ctx.fillStyle = c + '21'; dot(w * 0.82, h * 1.02, 230 * k); ctx.fill()
+  } else if (deco.type === 'logo' && logoImg) {
+    halo(w * 0.8, h * 0.7, w * 0.7, '33')
+    ctx.globalAlpha = 0.09
+    const s = w * 0.95
+    ctx.translate(w * 0.72, h * 0.68); ctx.rotate(-0.21)
+    ctx.drawImage(logoImg, -s / 2, -s / 2, s, s)
+  }
+  ctx.restore()
+}
+
+/** Dibuja el logo (lado `s`) centrado en (x, y). badge: 'tile' = sobre fondo blanco, 'ring' = además con aro multicolor, '' = solo. */
+function drawLogo(ctx, x, y, s, badge, k) {
+  if (badge) {
+    const tile = (side, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.roundRect(x - side / 2, y - side / 2, side, side, side * 0.28); ctx.fill() }
+    ctx.save()
+    ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 22 * k; ctx.shadowOffsetY = 6 * k
+    let ring = '#ffffff'
+    if (badge === 'ring' && ctx.createConicGradient) {
+      ring = ctx.createConicGradient(0, x, y)
+      ;['#f58529', '#dd2a7b', '#8134af', '#25f4ee', '#f58529'].forEach((col, i) => ring.addColorStop(i / 4, col))
+    }
+    tile(s, ring)
+    ctx.restore()
+    if (badge === 'ring') tile(s * 0.88, '#f4f8ff')
+  }
+  const inner = badge === 'ring' ? s * 0.76 : badge ? s * 0.84 : s
+  if (logoImg) ctx.drawImage(logoImg, x - inner / 2, y - inner / 2, inner, inner)
+}
+
+// Colores del logo de la web (modo claro y modo oscuro)
+const BRAND_LOOK = {
+  light: { plate: '#f7faff', edge: '#0b2a4a1f', first: '#0b2a4a', second: '#0066cc', sub: '#4b5b73', line: '0,102,204' },
+  dark: { plate: '#050b1a', edge: '#55adf540', first: '#f2f7fd', second: '#55adf5', sub: '#b6c6db', line: '85,173,245' },
+}
+export const BRAND_RATIO = 0.28 // alto / ancho del logo completo
+
+/** Logo completo (icono + GLOBAL ZION + DIGITAL SOLUTIONS) de ancho `W` centrado en (x, y). Se dibuja como texto para que se vea nítido. */
+function drawBrand(ctx, x, y, W, version, plate, k) {
+  const c = BRAND_LOOK[version] || BRAND_LOOK.light
+  const H = W * BRAND_RATIO
+  ctx.save()
+  if (plate) {
+    ctx.save()
+    ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = 20 * k; ctx.shadowOffsetY = 5 * k
+    ctx.fillStyle = c.plate; ctx.beginPath(); ctx.roundRect(x - W / 2, y - H / 2, W, H, H * 0.22); ctx.fill()
+    ctx.restore()
+    ctx.strokeStyle = c.edge; ctx.lineWidth = 2 * k; ctx.stroke()
+  } else if (version === 'dark') { ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 12 * k; ctx.shadowOffsetY = 2 * k }
+  const cw = W * (plate ? 0.88 : 1), u = cw / 260, left = x - cw / 2
+  if (logoImg) ctx.drawImage(logoImg, left, y - 29 * u, 58 * u, 58 * u)
+  const tx = left + 70 * u, tw = 190 * u
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+  // Cada renglón se ajusta para ocupar exactamente el ancho del bloque de texto
+  const fitRow = (parts, cy, weight, base, spacing) => {
+    const set = (size) => { ctx.font = `${weight} ${size}px "Plus Jakarta Sans", sans-serif`; if ('letterSpacing' in ctx) ctx.letterSpacing = `${size * spacing}px` }
+    set(base)
+    const total = ctx.measureText(parts.map((p) => p[0]).join('')).width - ('letterSpacing' in ctx ? base * spacing : 0)
+    const size = Math.min(base * 1.3, (base * tw) / total)
+    set(size)
+    let px = tx
+    for (const [str, color] of parts) { ctx.fillStyle = color; ctx.fillText(str, px, cy); px += ctx.measureText(str).width }
+  }
+  fitRow([['GLOBAL ', c.first], ['ZION', c.second]], y - 11 * u, 800, 22 * u, 0.1)
+  const g = ctx.createLinearGradient(tx, 0, tx + tw, 0)
+  g.addColorStop(0, `rgba(${c.line},1)`); g.addColorStop(1, `rgba(${c.line},.15)`)
+  ctx.fillStyle = g; ctx.fillRect(tx, y + 4 * u, tw, Math.max(1, 1.2 * u))
+  fitRow([['DIGITAL SOLUTIONS', c.sub]], y + 17 * u, 600, 10.5 * u, 0.34)
+  ctx.restore()
 }
 
 /** Ajustes de imagen de fondo (valores neutros). */
@@ -128,6 +254,8 @@ export function drawDesign(ctx, d, img) {
     ctx.fillRect(0, 0, w, h)
   }
 
+  if (d.bg.deco) drawDeco(ctx, d.bg.deco, w, h, k)
+
   // Acento (marco)
   if (d.accent?.show) {
     ctx.strokeStyle = d.accent.color
@@ -139,15 +267,41 @@ export function drawDesign(ctx, d, img) {
   // Capas de texto (y stickers: texto con fondo en forma de píldora, círculo, sello, estrella…)
   const boxes = []
   for (const l of d.layers) {
-    const size = l.size * k
+    if (l.logo || l.brand || l.box) { // logos y rectángulos: no son texto
+      const cx = l.x * w, cy = l.y * h
+      const bw = l.logo || l.brand ? l.size * k : l.box.w * w * (l.size / 100)
+      const bh = l.logo ? l.size * k : l.brand ? l.size * k * BRAND_RATIO : l.box.h * h * (l.size / 100)
+      ctx.save()
+      if (l.opacity != null && l.opacity < 1) ctx.globalAlpha = l.opacity
+      if (l.rot) { ctx.translate(cx, cy); ctx.rotate((l.rot * Math.PI) / 180); ctx.translate(-cx, -cy) }
+      if (l.logo) drawLogo(ctx, cx, cy, bw, l.badge, k)
+      else if (l.brand) drawBrand(ctx, cx, cy, bw, l.brand, l.plate, k)
+      else {
+        ctx.fillStyle = l.bg
+        ctx.beginPath(); ctx.roundRect(cx - bw / 2, cy - bh / 2, bw, bh, Math.min((l.box.r || 0) * k, bw / 2, bh / 2)); ctx.fill()
+      }
+      ctx.restore()
+      boxes.push({ id: l.id, lock: l.lock, cx, cy, rot: l.rot || 0, x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh })
+      continue
+    }
+    let size = l.size * k
     ctx.font = `${l.weight} ${size}px "${l.font}", sans-serif`
     ctx.textBaseline = 'middle'
     ctx.textAlign = l.align
     ctx.fillStyle = l.color
     const text = l.upper ? l.text.toUpperCase() : l.text
-    const maxW = w * 0.84
+    const maxW = w * (l.fit?.w || 0.84)
     const blank = !text.trim()
-    const lines = blank ? [''] : wrap(ctx, text, maxW)
+    let lines = blank ? [''] : wrap(ctx, text, maxW)
+    // `fit`: la letra se achica hasta que el texto quepa en su espacio
+    if (l.fit && !blank) {
+      const over = () => (l.fit.h && lines.length * size * 1.15 > l.fit.h * h) || lines.some((ln) => ctx.measureText(ln).width > maxW + 1)
+      while (size > 12 * k && over()) {
+        size *= 0.95
+        ctx.font = `${l.weight} ${size}px "${l.font}", sans-serif`
+        lines = wrap(ctx, text, maxW)
+      }
+    }
     const lh = size * 1.15
     const total = lines.length * lh
     const cx = l.x * w, cy = l.y * h
@@ -165,7 +319,7 @@ export function drawDesign(ctx, d, img) {
       const bw = widest + pad * 2, bh = Math.max(total, blank ? size * 1.6 : 0) + pad * 2
       const mx = bx + widest / 2, my = cy
       ctx.save()
-      ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 14 * k; ctx.shadowOffsetY = 4 * k
+      if (!l.flat) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 14 * k; ctx.shadowOffsetY = 4 * k }
       ctx.fillStyle = l.bg
       stickerShape(ctx, l.shape || 'pill', mx, my, bw, bh)
       ctx.fill()
@@ -194,7 +348,7 @@ export function drawDesign(ctx, d, img) {
     ctx.fillStyle = l.color
     if (!blank) lines.forEach((ln, i) => ctx.fillText(ln, cx, startY + i * lh))
     ctx.restore()
-    boxes.push({ lines, lh, startY, cx, cy, align: l.align, text, rot: l.rot || 0, font: `${l.weight} ${size}px "${l.font}", sans-serif`, id: l.id, x: bx - (l.bg ? size * 0.4 : 0), y: cy - total / 2 - (l.bg ? size * 0.4 : 0), w: widest + (l.bg ? size * 0.8 : 0), h: Math.max(total, blank ? size * 1.6 : 0) + (l.bg ? size * 0.8 : 0) })
+    boxes.push({ lock: l.lock, fs: size / k, lines, lh, startY, cx, cy, align: l.align, text, rot: l.rot || 0, font: `${l.weight} ${size}px "${l.font}", sans-serif`, id: l.id, x: bx - (l.bg ? size * 0.4 : 0), y: cy - total / 2 - (l.bg ? size * 0.4 : 0), w: widest + (l.bg ? size * 0.8 : 0), h: Math.max(total, blank ? size * 1.6 : 0) + (l.bg ? size * 0.8 : 0) })
   }
   return boxes
 }

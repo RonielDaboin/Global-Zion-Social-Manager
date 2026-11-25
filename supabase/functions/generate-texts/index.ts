@@ -7,6 +7,7 @@
 // (usa el mismo secreto GEMINI_API_KEY que generate-caption)
 
 import { requirePlan } from '../_shared/plan.ts'
+import { KNOWLEDGE, KNOWLEDGE_RULES } from '../_shared/knowledge.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -51,7 +52,9 @@ Deno.serve(async (req) => {
   }).join('\n')
 
   const instructions = [
-    `Eres el community manager de Global Zion, una agencia chilena de diseño y desarrollo web (sitios web, tiendas online, branding y gestión de redes sociales).`,
+    `Eres el community manager de Global Zion, una agencia chilena de diseño y desarrollo web.`,
+    KNOWLEDGE,
+    KNOWLEDGE_RULES,
     `Vas a escribir los textos que se ven sobre una imagen de publicación en redes, en ${lang}.`,
     `Hay ${slots.length} espacios de texto, en este orden:\n${list}`,
     topic ? `Tema o idea de la publicación: "${topic}".` : `El usuario no indicó tema: elige uno atractivo relacionado con los servicios de Global Zion.`,

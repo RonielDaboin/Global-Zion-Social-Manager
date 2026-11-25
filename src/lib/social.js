@@ -269,6 +269,23 @@ export async function generateLayerTextsAI({ layers, topic }) {
   return data.texts
 }
 
+/**
+ * Chat de la publicación (función `refine-post`): corrige textos y propone cambios de diseño.
+ * `image` es una imagen de referencia opcional (dataURL ya reducido).
+ */
+export async function refinePostAI(body) {
+  const { data, error } = await invokeFn('refine-post', { ...body, lang: getLang() }, 60000)
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    logAI('gemini', 'Textos', isLimitMsg(msg) ? 'limit' : 'error')
+    throw new Error(msg)
+  }
+  if (!data?.points?.length) throw new Error(data?.error || t('La IA no devolvió texto'))
+  logAI('gemini', 'Textos')
+  return data
+}
+
 /** Genera o edita una imagen con Gemini vía la Edge Function `generate-image`. Devuelve un dataURL. */
 export async function generateImageAI({ prompt, aspectRatio, image }) {
   const { data, error } = await invokeFn('generate-image', { prompt, aspectRatio, image }, 100000)

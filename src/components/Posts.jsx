@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
+import DeleteDialog, { isOnInstagram } from './DeleteDialog.jsx'
 import PostPreview from './PostPreview.jsx'
-import { socialCall } from '../lib/social.js'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang } from '../lib/i18n.jsx'
 import { Avatar, Icon, PlatformBadge, StatusTag, fmtDate } from './ui.jsx'
@@ -12,34 +11,11 @@ export function PostCard({ p, edit }) {
   const { deletePost, publishNow, notify, session } = useApp()
   useLang()
   const canPublish = ['draft', 'scheduled', 'failed'].includes(p.status)
-  const onIg = p.status === 'published' && p.platforms.includes('instagram') && p.results?.instagram?.ok && !p.results.instagram.demo
-  const [link, setLink] = useState(undefined) // undefined = buscando, null = no encontrada
-  useEffect(() => {
-    if (!asking) return
-    const ig = p.results.instagram
-    if (ig.permalink) { setLink(ig.permalink); return }
-    let off = false
-    socialCall('permalink', { mediaId: ig.mediaId, caption: p.caption, publishedAt: p.publishedAt })
-      .then((r) => { if (!off) setLink(r.permalink || null) })
-      .catch(() => { if (!off) setLink(null) })
-    return () => { off = true }
-  }, [asking]) // eslint-disable-line react-hooks/exhaustive-deps
+  const onIg = isOnInstagram(p)
   return (
     <div className="post" onClick={() => setOpen(true)} style={{ cursor: 'pointer' }}>
       {open && <div onClick={(e) => e.stopPropagation()}><PostPreview p={p} onClose={() => setOpen(false)} /></div>}
-      {asking && createPortal(
-        <div className="modal-bg" onClick={(e) => { e.stopPropagation(); setAsking(false) }}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{t('¿Eliminar publicación?')}</h3>
-            <p className="muted">{t('¿Dónde quieres eliminarla?')}</p>
-            <p className="muted"><small>{t('Instagram no permite borrar desde aplicaciones: se eliminará de la app y se abrirá la publicación para que la borres allí (⋯ → Eliminar).')}</small></p>
-            <button className="btn danger" onClick={() => deletePost(p.id)}>{t('Solo en la app')}</button>
-            {link
-              ? <a className="btn primary" href={link} target="_blank" rel="noopener noreferrer" onClick={() => deletePost(p.id)}>{t('También en Instagram')}</a>
-              : <button className="btn primary" disabled={link === undefined} onClick={() => { deletePost(p.id); notify(t('No se pudo localizar la publicación en Instagram; búscala en tu perfil.'), 'err') }}>{link === undefined ? t('Buscando en Instagram…') : t('También en Instagram')}</button>}
-            <button className="btn ghost" onClick={() => setAsking(false)}>{t('Cancelar')}</button>
-          </div>
-        </div>, document.body)}
+      {asking && <div onClick={(e) => e.stopPropagation()}><DeleteDialog p={p} onClose={() => setAsking(false)} /></div>}
       <span className="bg-by" aria-hidden="true"><span className="bg-badge"><img src="/logo.webp" alt="" /></span></span>
       <div className="thumb"><img src={p.image} alt="" />{p.mediaType === 'video' && <span className="vbadge">▶ {t('Video')}</span>}</div>
       <div className="pbody">
