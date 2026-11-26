@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import AutoPost from './AutoPost.jsx'
+import AutoVideo, { AutoChoice } from './AutoVideo.jsx'
+import { sheetFromCaption, composeCaption } from '../lib/postSheet.js'
 import { saveAsWip } from '../lib/autoPost.js'
 import { useApp } from '../lib/store.jsx'
 import { t, useLang, locale } from '../lib/i18n.jsx'
@@ -12,7 +14,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 export default function Dashboard({ go, edit }) {
   const { session, posts, accounts, access, openPlans } = useApp()
   useLang()
-  const [auto, setAuto] = useState(false)
+  const [auto, setAuto] = useState(null) // «Crear con IA»: null | 'choose' | 'image' | 'video'
   const count = (s) => posts.filter((p) => p.status === s).length
   const scheduled = posts.filter((p) => p.status === 'scheduled').sort((a, b) => a.scheduledAt - b.scheduledAt)
   const next = scheduled.slice(0, 4)
@@ -39,6 +41,15 @@ export default function Dashboard({ go, edit }) {
   ]
   const barTotal = bar.reduce((a, b) => a + b[2], 0)
 
+  // La imagen generada se abre como publicación nueva, con la ficha armada (contacto incluido) y el tono por defecto
+  const openImage = ({ topic, tone, ...snap }) => {
+    try { sessionStorage.removeItem('gz_edit') } catch { /* ignore */ }
+    const sheet = sheetFromCaption(snap.caption)
+    saveAsWip(session?.id, { ...snap, sheet, caption: composeCaption(sheet) })
+    setAuto(null)
+    go('composer-new')
+  }
+
   return (
     <div className="page dash">
       {/* Bienvenida */}
@@ -48,7 +59,7 @@ export default function Dashboard({ go, edit }) {
           <h1>{t('Hola, {name}', { name: session.name.split(' ')[0] })} 👋</h1>
           <p>{summary}</p>
           <div className="hero-act">
-            <button className="btn primary auto-btn" onClick={() => (access.limits.autoPost ? setAuto(true) : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))}>✨ {t('Crear con IA')}{!access.limits.autoPost && <LockTag plan="PREMIUM" />}</button>
+            <button className="btn primary auto-btn" onClick={() => (access.limits.autoPost ? setAuto('choose') : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))}>✨ {t('Crear con IA')}{!access.limits.autoPost && <LockTag plan="PREMIUM" />}</button>
             <button className="btn primary" onClick={() => go('composer-new')}><Icon name="plus" size={16} /> {t('Crear publicación')}</button>
             <button className="btn ghost cal-btn" onClick={() => go('calendar')}><Icon name="cal" size={16} /> {t('Calendario')}</button>
           </div>
@@ -168,7 +179,9 @@ export default function Dashboard({ go, edit }) {
           </section>
         </aside>
       </div>
-      {auto && <AutoPost onClose={() => setAuto(false)} onGenerated={(snap) => { try { sessionStorage.removeItem('gz_edit') } catch { /* ignore */ } saveAsWip(session?.id, snap); setAuto(false); go('composer-new') }} />}
+      {auto === 'choose' && <AutoChoice onClose={() => setAuto(null)} onImage={() => setAuto('image')} onVideo={() => setAuto('video')} />}
+      {auto === 'image' && <AutoPost onClose={() => setAuto(null)} onGenerated={openImage} />}
+      {auto === 'video' && <AutoVideo onClose={() => setAuto(null)} onBack={() => setAuto('choose')} onReady={(draft) => { setAuto(null); edit(draft) }} />}
     </div>
   )
 }

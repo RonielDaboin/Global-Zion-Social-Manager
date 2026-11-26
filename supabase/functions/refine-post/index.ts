@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     `PEDIDO DEL USUARIO: ${JSON.stringify(message || 'Usa la imagen de referencia como guía de estilo.')}`,
     `Aplica el pedido (puede traer varios cambios a la vez) y devuelve la publicación completa. Cambia solo lo necesario: lo que el pedido no afecte se devuelve igual. Si pide mejorar, variar o dar más impacto, sé creativo con la redacción.`,
     `Usa la información oficial de arriba y no inventes herramientas, servicios, precios, plazos ni cifras. Si el usuario entrega un dato nuevo o distinto, usa el suyo y avísale en "reply" que no coincide con la ficha de la web.`,
-    `Límites: "kicker" (etiqueta pequeña superior) máximo 28 caracteres; "title" máximo 48; "points" entre 1 y 6, cada uno de máximo 80 caracteres, sin viñetas ni emojis; "link" es el enlace o llamado que va al pie de la imagen, máximo 60. "caption" máximo ${maxLen} caracteres; debe coincidir con los puntos corregidos y conservar los enlaces y hashtags que sigan siendo válidos.`,
+    `Límites: "kicker" (etiqueta pequeña superior) máximo 28 caracteres; "title" máximo 48; "points" entre 1 y 6, cada uno de máximo 80 caracteres, sin viñetas ni emojis; "link" es el enlace o llamado que va al pie de la imagen, máximo 60. "caption" máximo ${maxLen} caracteres; debe coincidir con los puntos corregidos y conservar los enlaces y hashtags que sigan siendo válidos. El "caption" lleva SIEMPRE emojis que correspondan a lo que dice cada párrafo o punto (los hashtags van sin emojis).`,
     `CAMBIOS DE DISEÑO (deja vacío "" o -1 todo lo que no se pida cambiar):`,
     `- "layout": id de un formato disponible. Si pide otro diseño u otro formato sin precisar, elige uno distinto del actual que le quede bien al contenido.`,
     `- "mode": "dark" o "light" para fondo oscuro o claro.`,
@@ -80,6 +80,8 @@ Deno.serve(async (req) => {
   const call = (thinking: boolean, model: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    // Un modelo saturado a veces no contesta nada: se corta y se prueba el siguiente (el total queda bajo los 150 s de Supabase)
+    signal: AbortSignal.timeout(model.includes('lite') ? 40000 : 20000),
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: instructions }, ...(ref ? [{ inlineData: { mimeType: ref[1], data: ref[2] } }] : [])] }],
       generationConfig: {
@@ -111,8 +113,14 @@ Deno.serve(async (req) => {
   })
   let res!: Response
   for (const m of ORDER) {
-    res = await call(true, m)
-    if (res.status === 400) res = await call(false, m)
+    try {
+      res = await call(true, m)
+      if (res.status === 400) res = await call(false, m)
+    } catch (e) {
+      console.warn('Gemini sin respuesta con', m, (e as Error).name, '→ probando otro modelo')
+      res = new Response(JSON.stringify({ error: { message: 'Gemini no respondió a tiempo. Intenta de nuevo en un minuto.' } }), { status: 503 })
+      continue
+    }
     if (res.status !== 429 && res.status !== 503) break
     console.warn('Gemini', res.status, 'con', m, '→ probando otro modelo')
   }

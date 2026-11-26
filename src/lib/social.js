@@ -288,7 +288,7 @@ export async function generateLayerTextsAI({ layers, topic }) {
  * `image` es una imagen de referencia opcional (dataURL ya reducido).
  */
 export async function refinePostAI(body) {
-  const { data, error } = await invokeFn('refine-post', { ...body, lang: getLang() }, 60000)
+  const { data, error } = await invokeFn('refine-post', { ...body, lang: getLang() }, 150000)
   if (error) {
     let msg = error.message
     try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
