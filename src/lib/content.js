@@ -199,7 +199,8 @@ export async function contentUrl(item, download = false) {
 
 export async function downloadContentBlob(item) {
   if (item.storage === 'b2') {
-    const r = await fetch(await contentUrl(item)).catch(() => null)
+    // no-store: si la vista previa ya cargó el enlace sin CORS, la copia en caché haría fallar la lectura
+    const r = await fetch(await contentUrl(item), { cache: 'no-store' }).catch(() => null)
     if (!r?.ok) throw new Error(t('No se pudo descargar el archivo de Backblaze.'))
     return new Blob([await r.arrayBuffer()], { type: item.mime })
   }
