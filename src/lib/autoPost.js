@@ -4,7 +4,7 @@ import { PLATFORMS, newLayer, uid } from './formats.js'
 import { FX_DEFAULT, renderToDataURL } from './render.js'
 import { generateCaptionAI, generateImageAI, generateLayerTextsAI, shrinkImage, suggestHashtags } from './social.js'
 import { BG_PRESETS, BRAND, buildContent } from './brand.js'
-import { buildDesign, paintPalette, pickDeco, DECOS } from './designs.js'
+import { buildDesign, paintPalette, lightBottom, pickDeco, CONTACT_STYLES, DECOS } from './designs.js'
 import { vetImage } from './imageQuality.js'
 import { t } from './i18n.jsx'
 
@@ -207,10 +207,93 @@ export async function smartColors(design, info) {
   return { accent, text }
 }
 
+// ---- Barra al azar con los colores de la imagen ----
+/** Hasta tres tonos distintos y predominantes de una imagen; vacío si es casi gris. */
+function imageHues(dataUrl) {
+  return new Promise((res) => {
+    const im = new Image()
+    im.onerror = () => res([])
+    im.onload = () => {
+      const N = 64, c = document.createElement('canvas'); c.width = N; c.height = N
+      const ctx = c.getContext('2d', { willReadFrequently: true })
+      ctx.drawImage(im, 0, 0, N, N)
+      const d = ctx.getImageData(0, 0, N, N).data
+      const bins = new Array(24).fill(0)
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, dl = mx - mn
+        if (dl < 0.12 || l < 0.1 || l > 0.92) continue
+        const h = mx === r ? ((g - b) / dl) % 6 : mx === g ? (b - r) / dl + 2 : (r - g) / dl + 4
+        bins[Math.floor((((h * 60 + 360) % 360) / 15)) % 24] += (dl / (1 - Math.abs(2 * l - 1))) * dl
+      }
+      const total = bins.reduce((a, b) => a + b, 0)
+      const found = []
+      for (const [weight, i] of bins.map((w, i) => [w, i]).sort((a, b) => b[0] - a[0])) {
+        const hue = i * 15 + 7
+        if (total < 2 || weight < total * 0.05 || found.length === 3) break
+        if (found.every((h) => hueGap(h, hue) >= 30)) found.push(hue)
+      }
+      res(found)
+    }
+    im.src = dataUrl
+  })
+}
+
+/** Color del tono pedido sobre el que las letras (blancas u oscuras) se leen bien. */
+function readableFill(hue, sat, light) {
+  const white = contrast('#ffffff', hsl(hue, sat, light)) >= contrast('#0b1220', hsl(hue, sat, light))
+  const text = white ? '#ffffff' : '#0b1220'
+  let l = light
+  while (contrast(text, hsl(hue, sat, l)) < 4.5 && l > 8 && l < 92) l += white ? -2 : 2
+  return { fill: hsl(hue, sat, l), text }
+}
+
+/** Colores del pie con los tonos de la imagen: `main` para el fondo y `extra` para líneas y el segundo bloque. */
+function footColors(main, extra, tone, onPaper, gray) {
+  const s = (v) => (gray ? Math.min(v, 14) : v)
+  const jitter = () => Math.round(Math.random() * 8) - 4
+  const base = tone === 'deep' ? { fill: hsl(main, s(60), 12 + jitter()), text: '#ffffff' }
+    : tone === 'soft' ? { fill: hsl(main, s(55), 94 + jitter() / 2), text: hsl(main, s(65), 13) }
+      : readableFill(main, s(76), 46 + jitter() * 2)
+  const fill2 = tone === 'deep' ? hsl(extra, s(62), 22) : tone === 'soft' ? hsl(extra, s(60), 88) : hsl(extra, s(76), base.text === '#ffffff' ? 30 : 64)
+  const second = readableFill(extra, s(80), tone === 'vivid' ? 22 : 52)
+  return {
+    ...base,
+    fill2: contrast(base.text, fill2) >= 4.5 ? fill2 : base.fill,
+    line: hsl(extra, s(86), onPaper ? 38 : 62),
+    alt: second.fill,
+    altText: second.text,
+  }
+}
+
+/**
+ * Estilo de web y WhatsApp al azar, pintado con los colores de la imagen de fondo (la foto, o el degradado y su acento).
+ * Devuelve el cambio para `restyle`.
+ */
+export async function smartFooter(design) {
+  const { palette, photo, layout, contact } = design.auto
+  let hues = []
+  if (photo) { try { hues = await imageHues(design.bg.image) } catch { /* se usa el acento */ } }
+  else hues = [palette.c2, palette.c3, palette.accent].filter((c) => c && !isGray(c.slice(0, 7))).map((c) => hexHue(c.slice(0, 7)))
+  const gray = !hues.length && isGray(palette.accent.slice(0, 7))
+  if (!hues.length) hues = [hexHue(palette.accent.slice(0, 7))]
+  // los estilos verdes no entran: su color es fijo y no seguiría al de la imagen
+  const style = pick(CONTACT_STYLES.filter((x) => !x.green && x.id !== contact))
+  const bare = ['line', 'frame-line', 'plain'].includes(style.id)
+  const onPaper = lightBottom(layout, palette, photo)
+  const tone = style.tone || (style.id === 'pill-outline' ? (onPaper ? 'soft' : 'deep') : pick(['deep', 'deep', 'vivid', 'soft']))
+  const main = pick(hues)
+  const others = hues.filter((h) => hueGap(h, main) >= 25)
+  const extra = others.length ? pick(others) : (main + pick([28, -28, 40, -40]) + 360) % 360
+  const colors = footColors(main, extra, tone, onPaper, gray)
+  // sin fondo propio solo se pintan las líneas: las letras siguen sobre el diseño
+  return { contact: style.id, foot: bare ? { line: colors.line } : colors }
+}
+
 /**
  * Cambia el aspecto de un diseño ya armado. `change` admite: layout (id de composición), mode ('dark'|'light'),
  * hue (0-360), logo ('light'|'dark'), deco (patrón o 'none'), contact (id de CONTACT_STYLES), colors ({ accent, bg, text })
- * y removePhoto. Lo que no venga se mantiene.
+ * foot (colores del pie sacados de la imagen) y removePhoto. Lo que no venga se mantiene.
  */
 export function restyle(design, info, change = {}) {
   const was = design.auto
@@ -221,8 +304,11 @@ export function restyle(design, info, change = {}) {
     palette = makePalette({ hue, dark: change.mode ? change.mode === 'dark' : palette.dark, exact: change.hue != null })
   }
   if (change.colors) palette = paintPalette(palette, change.colors)
+  // los colores del pie salidos de la imagen se descartan si se elige otro estilo o cambia el fondo
+  const newBack = change.hue != null || change.mode || change.removePhoto || change.colors?.bg
+  const foot = change.foot !== undefined ? change.foot : change.contact || newBack ? null : was.foot
   const deco = change.deco === 'none' ? null : DECOS.includes(change.deco) ? change.deco : design.bg.deco?.type || pickDeco()
-  const d = buildDesign({ info, palette, layout: change.layout || was.layout, logo: change.logo || was.logo, contact: change.contact || was.contact, photo, deco })
+  const d = buildDesign({ info, palette, layout: change.layout || was.layout, logo: change.logo || was.logo, contact: change.contact || was.contact, foot, photo, deco })
   if (photo) return { ...d, bg: design.bg }
   return { ...d, bg: { ...d.bg, prompt: design.bg.prompt, scene: design.bg.scene } }
 }
@@ -237,8 +323,8 @@ export function toolsVariant(info) {
 
 /** Cambia los textos de un diseño ya armado (chat de correcciones) sin tocar su composición, colores ni fondo. */
 export function retext(design, info) {
-  const { layout, palette, photo, logo, contact } = design.auto
-  return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, contact, deco: null }).layers }
+  const { layout, palette, photo, logo, contact, foot } = design.auto
+  return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, contact, foot, deco: null }).layers }
 }
 
 /** Devuelve el estado completo del Composer (misma forma que su trabajo en curso). `text` puede ir vacío. */

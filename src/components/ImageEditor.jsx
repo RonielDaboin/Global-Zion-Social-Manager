@@ -628,7 +628,7 @@ export default function ImageEditor({ design, setDesign }) {
                 <input type="color" value={layer.color} onChange={(e) => patchLayer({ color: e.target.value })} />
               </div>
               </>}
-              {layer.box && <label className="check">{t('Color')} <input type="color" value={(layer.bg || '#ffffff').slice(0, 7)} onChange={(e) => patchLayer({ bg: e.target.value + (layer.bg || '').slice(7) })} /></label>}
+              {layer.box && <label className="check">{t('Color')} <input type="color" value={(layer.bg || '#ffffff').slice(0, 7)} onChange={(e) => patchLayer({ bg: e.target.value + (layer.bg || '').slice(7), bg2: '' })} /></label>}
               {layer.contact && <>
                 <input type="text" value={layer.contact.link} aria-label={t('Página web')} onChange={(e) => patchLayer({ contact: { ...layer.contact, link: e.target.value } })} />
                 <input type="tel" value={layer.contact.phone} aria-label="WhatsApp" onChange={(e) => patchLayer({ contact: { ...layer.contact, phone: e.target.value } })} />

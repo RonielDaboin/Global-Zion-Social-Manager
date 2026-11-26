@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
-import { generateAutoPost, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle, smartColors } from '../lib/autoPost.js'
+import { generateAutoPost, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle, smartColors, smartFooter } from '../lib/autoPost.js'
 import { LAYOUTS, DECOS, CONTACT_STYLES, saveContactStyle } from '../lib/designs.js'
 import { searchWebPhotos, loadWebPhoto } from '../lib/webImages.js'
 import { refinePostAI } from '../lib/social.js'
@@ -84,6 +84,9 @@ function Tools({ design, disabled, onChange }) {
       <button type="button" className="btn ghost sm" aria-expanded={open} onClick={() => setOpen(!open)}>🎨 {t('Colores')}</button>
       <button type="button" className="btn ghost sm" disabled={disabled} onClick={() => onChange({ random: true })} title={t('Colores que combinan con el fondo y el tema')}>
         🎲 {t('Colores al azar')}
+      </button>
+      <button type="button" className="btn ghost sm" disabled={disabled} onClick={() => onChange({ randomBar: true })} title={t('Otro estilo de web y WhatsApp con los colores de la imagen')}>
+        🎲 {t('Barra al azar')}
       </button>
       {open && (
         <div className="pick-colors">
@@ -202,7 +205,8 @@ export default function AutoPost({ onClose, onGenerated }) {
     if (!cur || busyChat) return
     setBusyChat(true)
     try {
-      const applied = change.random ? { colors: await smartColors(cur.design, snap.options.info) } : change
+      const applied = change.random ? { colors: await smartColors(cur.design, snap.options.info) }
+        : change.randomBar ? await smartFooter(cur.design) : change
       await push(to, restyle(cur.design, snap.options.info, applied))
     } finally { setBusyChat(false) }
   }

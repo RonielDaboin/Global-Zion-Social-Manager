@@ -167,15 +167,21 @@ function drawBrand(ctx, x, y, W, version, plate, k) {
   ctx.restore()
 }
 
-/** Logo de WhatsApp en un círculo verde de diámetro `d` centrado en (x, y). */
-function drawWhatsApp(ctx, x, y, d) {
-  ctx.fillStyle = '#25d366'
+/** Logo de WhatsApp en un círculo de diámetro `d` centrado en (x, y): verde, o blanco con el logo verde (`invert`). */
+function drawWhatsApp(ctx, x, y, d, invert) {
+  ctx.fillStyle = invert ? '#ffffff' : '#25d366'
   ctx.beginPath(); ctx.arc(x, y, d / 2, 0, Math.PI * 2); ctx.fill()
   const s = (d * 0.68) / 24
   ctx.save()
   ctx.translate(x - 12 * s, y - 12 * s); ctx.scale(s, s)
-  ctx.fillStyle = '#ffffff'; ctx.fill(new Path2D(WA_PATH))
+  ctx.fillStyle = invert ? '#128c4a' : '#ffffff'; ctx.fill(new Path2D(WA_PATH))
   ctx.restore()
+}
+
+function linear(ctx, x0, y0, x1, y1, from, to) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1)
+  g.addColorStop(0, from); g.addColorStop(1, to)
+  return g
 }
 
 /** Globo de línea en un solo color: sobre un fondo de color, el emoji 🌐 (azul) casi no se ve. */
@@ -190,7 +196,7 @@ function drawGlobe(ctx, x, y, d, color) {
 
 /** Pie de contacto: web y WhatsApp en una línea o en dos (`stack`). En estilo píldora lleva fondo (uno, o uno por dato con `split`). Devuelve la caja que ocupa. */
 function drawContact(ctx, l, w, h, k) {
-  const { link, phone, stack, border, mono } = l.contact
+  const { link, phone, stack, border, mono, waWhite, square, bg2, alt } = l.contact
   const bg = l.contact.style === 'pill' ? l.bg : ''
   const split = !!bg && !!l.contact.split
   const items = [{ text: link, wa: false }, { text: phone, wa: true }].filter((it) => it.text)
@@ -217,10 +223,11 @@ function drawContact(ctx, l, w, h, k) {
   ctx.save()
   if (l.opacity != null && l.opacity < 1) ctx.globalAlpha = l.opacity
   if (l.rot) { ctx.translate(cx, cy); ctx.rotate((l.rot * Math.PI) / 180); ctx.translate(-cx, -cy) }
-  const plate = (x, y, pw, ph, radius) => {
+  const plate = (x, y, pw, ph, radius, fill = bg) => {
     ctx.save()
     if (!l.flat) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 14 * k; ctx.shadowOffsetY = 4 * k }
-    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(x, y, pw, ph, radius); ctx.fill()
+    ctx.fillStyle = fill === bg && bg2 ? linear(ctx, x, y, x + pw, y, bg, bg2) : fill
+    ctx.beginPath(); ctx.roundRect(x, y, pw, ph, square ? size * 0.28 : radius); ctx.fill()
     ctx.restore()
     if (border) { ctx.strokeStyle = border; ctx.lineWidth = 3 * k; ctx.stroke() }
   }
@@ -229,14 +236,16 @@ function drawContact(ctx, l, w, h, k) {
   let x = left
   items.forEach((it, i) => {
     const y = stack ? cy - (row * (n - 1)) / 2 + row * i : cy
-    if (split) plate(x, y - single / 2, stack ? bw : widths[i] + padX * 2, single, single / 2)
+    const other = split && alt && i > 0 ? alt : null // segunda píldora con sus propios colores
+    const color = other ? other.color : l.color
+    if (split) plate(x, y - single / 2, stack ? bw : widths[i] + padX * 2, single, single / 2, other ? other.bg : bg)
     const tx = x + padX
-    ctx.fillStyle = l.color
-    if (it.wa) drawWhatsApp(ctx, tx + size * 0.6, y, size * 1.2)
-    else if (mono) drawGlobe(ctx, tx + size * 0.6, y, size * 1.05, l.color)
+    ctx.fillStyle = color
+    if (it.wa) drawWhatsApp(ctx, tx + size * 0.6, y, size * 1.2, waWhite)
+    else if (mono) drawGlobe(ctx, tx + size * 0.6, y, size * 1.05, color)
     else { ctx.textAlign = 'center'; ctx.fillText('🌐', tx + size * 0.6, y) }
     ctx.textAlign = 'left'
-    ctx.fillStyle = l.color
+    ctx.fillStyle = color
     ctx.fillText(it.text, tx + size * 1.6, y)
     if (!stack) x += widths[i] + (split ? padX * 2 + size * 0.55 : size * 1.4)
   })
@@ -358,7 +367,8 @@ export function drawDesign(ctx, d, img) {
       if (l.logo) drawLogo(ctx, cx, cy, bw, l.badge, k)
       else if (l.brand) drawBrand(ctx, cx, cy, bw, l.brand, l.plate, k)
       else {
-        ctx.fillStyle = l.bg
+        // `bg2`: degradado hacia un segundo color, horizontal o vertical (`grad: 'v'`)
+        ctx.fillStyle = !l.bg2 ? l.bg : l.grad === 'v' ? linear(ctx, cx, cy - bh / 2, cx, cy + bh / 2, l.bg, l.bg2) : linear(ctx, cx - bw / 2, cy, cx + bw / 2, cy, l.bg, l.bg2)
         ctx.beginPath(); ctx.roundRect(cx - bw / 2, cy - bh / 2, bw, bh, Math.min((l.box.r || 0) * k, bw / 2, bh / 2)); ctx.fill()
       }
       ctx.restore()
