@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
-import { generateAutoPost, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle } from '../lib/autoPost.js'
-import { LAYOUTS, DECOS } from '../lib/designs.js'
+import { generateAutoPost, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle, smartColors } from '../lib/autoPost.js'
+import { LAYOUTS, DECOS, CONTACT_STYLES, saveContactStyle } from '../lib/designs.js'
 import { searchWebPhotos, loadWebPhoto } from '../lib/webImages.js'
 import { refinePostAI } from '../lib/social.js'
 import { aiTextUsed, aiTextBump } from '../lib/plans.js'
@@ -33,8 +33,37 @@ function History({ items, sel, onSel, disabled }) {
   )
 }
 
-/** Cambios rápidos sin IA sobre la versión que se está viendo: formato y versión del logo. */
+// Colores que se pueden cambiar a mano, con tonos sugeridos para cada uno
+const COLORS = [
+  { key: 'accent', name: 'Elementos', list: ['#38bdf8', '#2563eb', '#2dd4bf', '#34d399', '#fbbf24', '#fb923c', '#ef4444', '#ec4899', '#a78bfa'] },
+  { key: 'bg', name: 'Fondo', list: ['#0f2a5c', '#020618', '#1f2937', '#0e7490', '#14532d', '#4c1d95', '#7f1d1d', '#e5e7eb', '#dbeafe'] },
+  { key: 'text', name: 'Letras', list: ['#ffffff', '#e5e7eb', '#fde68a', '#bae6fd', '#bbf7d0', '#0f172a', '#1e3a8a', '#374151'] },
+]
+
+/** Selector de color libre. Aplica al cerrar el selector, para no crear una versión por cada tono al arrastrar. */
+function CustomColor({ value, label, disabled, onPick }) {
+  const ref = useRef(null)
+  const pickRef = useRef(onPick)
+  pickRef.current = onPick
+  useEffect(() => {
+    const el = ref.current
+    const done = () => pickRef.current(el.value)
+    el.addEventListener('change', done) // el «change» nativo (el onChange de React salta con cada movimiento)
+    return () => el.removeEventListener('change', done)
+  }, [])
+  useEffect(() => { ref.current.value = value }, [value])
+  return <input ref={ref} type="color" className="pick-custom" defaultValue={value} disabled={disabled} title={label} aria-label={label} />
+}
+
+/** Cambios rápidos sin IA sobre la versión que se está viendo: formato, logo, pie de contacto y colores. */
 function Tools({ design, disabled, onChange }) {
+  const [open, setOpen] = useState(false)
+  const { palette, photo, contact } = design.auto
+  const current = { accent: palette.accent, bg: palette.c2, text: palette.text || (photo || palette.dark ? '#ffffff' : '#0f172a') }
+  const setContact = (id) => {
+    saveContactStyle(id) // las próximas publicaciones salen con el mismo estilo
+    onChange({ contact: id })
+  }
   return (
     <div className="pick-tools">
       <label>
@@ -43,9 +72,35 @@ function Tools({ design, disabled, onChange }) {
           {LAYOUTS.map((l) => <option key={l.id} value={l.id}>{t(l.name)}</option>)}
         </select>
       </label>
+      <label>
+        <span>🔗 {t('Web y WhatsApp')} ({CONTACT_STYLES.length})</span>
+        <select value={contact || 'bar'} disabled={disabled} onChange={(e) => setContact(e.target.value)}>
+          {CONTACT_STYLES.map((s) => <option key={s.id} value={s.id}>{t(s.name)}</option>)}
+        </select>
+      </label>
       <button type="button" className="btn ghost sm" disabled={disabled} onClick={() => onChange({ logo: design.auto.logo === 'dark' ? 'light' : 'dark' })}>
         🌓 {design.auto.logo === 'dark' ? t('Logo claro') : t('Logo oscuro')}
       </button>
+      <button type="button" className="btn ghost sm" aria-expanded={open} onClick={() => setOpen(!open)}>🎨 {t('Colores')}</button>
+      <button type="button" className="btn ghost sm" disabled={disabled} onClick={() => onChange({ random: true })} title={t('Colores que combinan con el fondo y el tema')}>
+        🎲 {t('Colores al azar')}
+      </button>
+      {open && (
+        <div className="pick-colors">
+          {COLORS.filter((c) => !(photo && c.key === 'bg')).map((c) => (
+            <div key={c.key} role="group" aria-label={t(c.name)}>
+              <span>{t(c.name)}</span>
+              <div>
+                {c.list.map((hex) => (
+                  <button key={hex} type="button" className={'pick-sw' + (current[c.key]?.toLowerCase() === hex ? ' on' : '')} style={{ background: hex }} disabled={disabled}
+                    title={hex} aria-label={t(c.name) + ' ' + hex} onClick={() => onChange({ colors: { [c.key]: hex } })} />
+                ))}
+                <CustomColor value={(current[c.key] || '#000000').slice(0, 7)} label={t('Color a tu gusto') + ': ' + t(c.name)} disabled={disabled} onPick={(hex) => onChange({ colors: { [c.key]: hex } })} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -146,7 +201,10 @@ export default function AutoPost({ onClose, onGenerated }) {
     const cur = to === 'a' ? histA[selA] : histB[selB]
     if (!cur || busyChat) return
     setBusyChat(true)
-    try { await push(to, restyle(cur.design, snap.options.info, change)) } finally { setBusyChat(false) }
+    try {
+      const applied = change.random ? { colors: await smartColors(cur.design, snap.options.info) } : change
+      await push(to, restyle(cur.design, snap.options.info, applied))
+    } finally { setBusyChat(false) }
   }
 
   const findPhotos = async (query) => {

@@ -3,7 +3,9 @@
 // Las posiciones son fracciones del lienzo y cada texto lleva `fit` (espacio máximo): el motor de dibujo achica
 // la letra hasta que quepa, así cualquier texto y formato (4:5, 1:1, story…) queda ordenado.
 import { newLayer } from './formats.js'
+import { BRAND } from './brand.js'
 import { PRO_LAYOUTS, rowsIn, two, unnumber } from './layoutsPro.js'
+import { EXTRA_LAYOUTS } from './layoutsExtra.js'
 
 const NAVY = '#0b1b3f'
 
@@ -13,6 +15,18 @@ const lighten = (hex, f) => '#' + [1, 3, 5].map((i) => { const v = parseInt(hex.
 
 const darken = (hex, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - f)).toString(16).padStart(2, '0')).join('')
 
+/** Aplica a una paleta los colores elegidos a mano: `accent` (elementos), `bg` (fondo) y `text` (letras). */
+export function paintPalette(palette, { accent, bg, text } = {}) {
+  const out = { ...palette }
+  if (accent) out.accent = accent
+  if (text) out.text = text
+  if (bg) {
+    const dark = lum(bg) < 0.58
+    Object.assign(out, { c1: dark ? darken(bg, 0.45) : lighten(bg, 0.45), c2: bg, c3: '', dark })
+  }
+  return out
+}
+
 /** Colores de trabajo de una paleta. Sobre foto (`photo`) siempre se usa texto claro con sombra. */
 function theme(palette, photo) {
   const dark = photo || palette.dark
@@ -21,8 +35,8 @@ function theme(palette, photo) {
     accent: palette.accent,
     ink: lum(palette.accent) < 0.52 ? '#ffffff' : NAVY, // texto sobre el color de acento
     accentText: dark && lum(palette.accent) < 0.58 ? lighten(palette.accent, 0.45) : !dark && lum(palette.accent) > 0.42 ? darken(palette.accent, 0.3) : palette.accent, // acento usado como letra
-    title: dark ? '#ffffff' : '#0f172a',
-    body: dark ? '#e8eef7' : '#1f2937',
+    title: palette.text || (dark ? '#ffffff' : '#0f172a'), // `text`: color de letras elegido a mano
+    body: palette.text || (dark ? '#e8eef7' : '#1f2937'),
     card: photo ? '#050c1cbf' : dark ? '#ffffff17' : '#ffffffeb',
     line: photo || dark ? '#ffffff2e' : '#0f172a1f',
   }
@@ -47,6 +61,76 @@ function kit(T, version) {
     return newLayer({ text: '', x: cx, y, size: w, brand: version, plate: o.on === 'accent' || (version === 'light') === T.dark, font: 'Plus Jakarta Sans', weight: 800, shadow: false })
   }
   return { text, solid, title, pill, box, logo, brand }
+}
+
+// ---- Pie de contacto ----
+// La web y el WhatsApp van siempre juntos, en una barra al pie o en una píldora (se recuerda lo elegido)
+export const CONTACT_STYLES = [
+  { id: 'bar', name: 'Barra translúcida' },
+  { id: 'bar-dark', name: 'Barra oscura' },
+  { id: 'bar-white', name: 'Barra blanca' },
+  { id: 'bar-accent', name: 'Barra de color' },
+  { id: 'bar-line', name: 'Barra con línea de color' },
+  { id: 'float', name: 'Barra flotante' },
+  { id: 'line', name: 'Línea fina sin fondo' },
+  { id: 'pill', name: 'Píldora de color' },
+  { id: 'pill-white', name: 'Píldora blanca' },
+  { id: 'pill-dark', name: 'Píldora oscura' },
+  { id: 'pill-glass', name: 'Píldora translúcida' },
+  { id: 'pill-outline', name: 'Píldora con borde' },
+  { id: 'pill-split', name: 'Dos píldoras' },
+]
+const CONTACT_KEY = 'gz_auto_contact'
+const isPill = (style) => style.startsWith('pill')
+export const contactStyle = () => {
+  try { const saved = localStorage.getItem(CONTACT_KEY); return CONTACT_STYLES.some((s) => s.id === saved) ? saved : 'bar' } catch { return 'bar' }
+}
+export const saveContactStyle = (style) => { try { localStorage.setItem(CONTACT_KEY, style) } catch { /* sin almacenamiento */ } }
+
+/** Cambia el pie propio de cada composición (donde iba solo la web) por el de contacto, sin mover el contenido. */
+function withFooter(layers, id, link, T, k, style) {
+  const pill = isPill(style)
+  const low = (l) => l.y > 0.875
+  const mark = layers.find((l) => l.brand && low(l)) // composiciones que además llevan el logo abajo
+  const rest = layers.filter((l) => !(low(l) && ((l.text && l.text.includes(link)) || (l.box && (!pill || l.box.w === 1)))))
+  const contact = ({ stack = false, border = '', split = false, mono = false, ...o }) => newLayer({ text: '', font: 'Inter', weight: 700, shadow: false, color: '#ffffff', ...o, contact: { style: pill ? 'pill' : 'bar', link, phone: BRAND.whatsapp, stack, border, split, mono } })
+  const left = id === 'sidebar' ? 0.165 : 0 // la franja lateral queda entera
+  const paper = id === 'sheet' || !T.dark // al pie queda un fondo claro
+  const glass = T.photo ? '#050c1cd1' : paper ? '#0f172aed' : '#ffffff1c'
+
+  if (!pill) {
+    const fill = { 'bar-dark': '#080f1ef7', 'bar-white': '#fffffffa', 'bar-accent': T.accent, 'bar-line': '#080f1ee6', line: '' }[style] ?? glass
+    const lightFoot = style === 'bar-white' || (style === 'line' && paper)
+    const color = style === 'bar-accent' ? T.ink : lightFoot ? NAVY : '#ffffff'
+    const float = style === 'float'
+    const top = mark ? 0.885 : 0.9
+    const back = []
+    if (float) back.push(k.box(left + 0.028, top - 0.004, 0.944 - left, (mark ? 0.986 : 0.978) - top + 0.004, T.photo || paper ? glass : '#050c1cb8', { box: { r: 34 }, lock: true }))
+    else if (fill) back.push(k.box(left, top, 1 - left, 1 - top, fill, { box: { r: 0 }, lock: true }))
+    if (style === 'bar-line') back.push(k.box(left, top, 1 - left, 0.007, T.accent, { box: { r: 0 }, lock: true }))
+    if (style === 'line') back.push(k.box(Math.max(left + 0.03, 0.065), top + 0.002, 0.935 - Math.max(left + 0.03, 0.065), 0.003, T.accent, { box: { r: 2 }, lock: true }))
+    const middle = float ? (top + (mark ? 0.986 : 0.978)) / 2 - 0.002 : (1 + top) / 2
+    if (!mark) return [...rest, ...back, contact({ color, mono: style === 'bar-accent', x: (1 + left) / 2, y: middle, size: float ? 34 : 36, fit: { w: (float ? 0.88 : 0.92) - left } })]
+    // El logo pasa al pie, a la izquierda, y el contacto queda en dos líneas a la derecha
+    const inset = float ? 0.015 : 0
+    // la placa del logo se usa cuando su versión no contrasta con el pie
+    const plate = style === 'bar-accent' ? true : lightFoot ? mark.brand === 'dark' : mark.brand === 'light'
+    const moved = { ...mark, size: float ? 320 : 340, x: (left ? left + 0.025 : 0.045) + inset + (float ? 160 : 170) / 1080, y: middle, plate }
+    return [...rest.filter((l) => l !== mark), ...back, moved, contact({ color, mono: style === 'bar-accent', x: 0.955 - inset * 1.4, y: middle, size: float ? 30 : 33, align: 'right', stack: true, fit: { w: (left ? 0.43 : 0.52) - inset * 2 } })]
+  }
+
+  const look = {
+    pill: { bg: T.accent, color: T.ink, mono: true },
+    'pill-white': { bg: '#ffffff', color: NAVY },
+    'pill-dark': { bg: '#080f1ef2', color: '#ffffff' },
+    'pill-glass': { bg: glass, color: '#ffffff', flat: true },
+    'pill-outline': { bg: paper ? '#ffffffe6' : '#050c1c80', color: paper ? NAVY : '#ffffff', border: T.accent, flat: true },
+    'pill-split': { bg: '#ffffff', color: NAVY, split: true },
+  }[style]
+  if (mark && mark.x === 0.5) return [...rest, contact({ ...look, x: 0.5, y: 0.958, size: 24, fit: { w: 0.86 } })]
+  if (mark) return [...rest, contact({ ...look, x: 0.945, y: 0.932, size: look.split ? 25 : 27, align: 'right', stack: true, fit: { w: 0.37 } })]
+  const framed = id === 'editorial'
+  return [...rest, contact({ ...look, x: 0.5, y: framed ? 0.922 : 0.937, size: framed ? 26 : 34, fit: { w: framed ? 0.76 : 0.86 } })]
 }
 
 // ---- Composiciones ----
@@ -205,6 +289,7 @@ export const LAYOUTS = [
     },
   },
   ...PRO_LAYOUTS,
+  ...EXTRA_LAYOUTS,
 ]
 
 // Patrones de fondo que se combinan con cualquier composición (se dibujan en render.js)
@@ -231,14 +316,15 @@ export const layoutName = (design) => LAYOUTS.find((l) => l.id === design?.auto?
  * Arma un diseño completo. `info` = { kicker, title, points, link }. `design.auto` guarda cómo se armó
  * para poder cambiar solo los textos después.
  */
-export function buildDesign({ info, palette, layout = pickLayout(), deco = pickDeco(), photo = false, logo = pickLogo() }) {
+export function buildDesign({ info, palette, layout = pickLayout(), deco = pickDeco(), photo = false, logo = pickLogo(), contact = contactStyle() }) {
   const L = LAYOUTS.find((l) => l.id === layout) || LAYOUTS[0]
   const T = theme(palette, photo)
+  const k = kit(T, logo)
   return {
     format: 'ig-portrait',
     bg: { type: 'gradient', c1: palette.c1, c2: palette.c2, c3: palette.c3, angle: palette.angle, image: null, dim: 0, ...(photo || !deco ? {} : { deco: { type: deco, color: palette.accent } }) },
-    accent: { show: !!L.frame, color: palette.accent },
-    layers: L.build(info, T, kit(T, logo)),
-    auto: { layout: L.id, photo, logo, palette: { c1: palette.c1, c2: palette.c2, c3: palette.c3, angle: palette.angle, dark: palette.dark, accent: palette.accent, hue: palette.hue } },
+    accent: { show: !!L.frame && isPill(contact), color: palette.accent }, // el marco cruzaría la barra
+    layers: withFooter(L.build(info, T, k), L.id, info.link, T, k, contact),
+    auto: { layout: L.id, photo, logo, contact, palette: { c1: palette.c1, c2: palette.c2, c3: palette.c3, angle: palette.angle, dark: palette.dark, accent: palette.accent, hue: palette.hue, text: palette.text } },
   }
 }

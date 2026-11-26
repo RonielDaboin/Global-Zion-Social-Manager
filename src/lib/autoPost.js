@@ -4,7 +4,7 @@ import { PLATFORMS, newLayer, uid } from './formats.js'
 import { FX_DEFAULT, renderToDataURL } from './render.js'
 import { generateCaptionAI, generateImageAI, generateLayerTextsAI, shrinkImage, suggestHashtags } from './social.js'
 import { BG_PRESETS, BRAND, buildContent } from './brand.js'
-import { buildDesign, pickDeco, DECOS } from './designs.js'
+import { buildDesign, paintPalette, pickDeco, DECOS } from './designs.js'
 import { vetImage } from './imageQuality.js'
 import { t } from './i18n.jsx'
 
@@ -158,9 +158,59 @@ function hexHue(hex) {
   return Math.round((h * 60 + 360) % 360)
 }
 
+// ---- Colores al azar que combinan ----
+// Tonos que van con cada tema (id de ANGLES en brand.js)
+const THEME_HUES = {
+  database: [205, 188, 232], quoter: [215, 42, 160], crm: [262, 215, 170], hr: [172, 28, 265], tools: [200, 185, 250],
+  pc: [190, 150, 215], custom: [195, 265, 158], wordpress: [205, 190, 45], plans: [43, 160, 215], time: [28, 190, 46],
+  speed: [22, 48, 188], maintenance: [176, 205, 40], security: [150, 175, 205], store: [25, 335, 150], how: [215, 170, 40],
+  trust: [210, 170, 42], services: [200, 42, 25], growth: [145, 40, 200],
+}
+const hueGap = (a, b) => Math.abs(((a - b + 540) % 360) - 180)
+// Contraste entre dos colores según WCAG (1 = iguales, 21 = blanco y negro)
+const relLum = (hex) => [1, 3, 5]
+  .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
+const contrast = (a, b) => { const [x, y] = [relLum(a), relLum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05) }
+const isGray = (hex) => { const v = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); return Math.max(...v) - Math.min(...v) < 28 }
+
+/**
+ * Colores al azar para los elementos y las letras, que combinan con el fondo (el tono de la foto o del degradado)
+ * y con el tema de la publicación. El fondo no cambia y se asegura el contraste para que todo se lea.
+ */
+export async function smartColors(design, info) {
+  const { palette, photo } = design.auto
+  const dark = photo || palette.dark
+  const back = photo ? '#101828' : palette.c2.slice(0, 7) // las fotos van oscurecidas
+  let base = null
+  if (photo) { try { base = await dominantHue(design.bg.image) } catch { /* se usa solo el tema */ } }
+  else if (!isGray(back)) base = hexHue(back)
+  const theme = THEME_HUES[buildContent(`${info.prompt || ''} ${info.kicker} ${info.title}`).angle.id] || THEME_HUES.services
+  // análogos y complementarios del fondo, más los tonos del tema
+  // con fondo gris, la rueda parte del color principal del tema
+  const wheel = [0, 28, -28, 180, 152, -152].map((d) => ((base ?? theme[0]) + d + 360) % 360)
+  const all = [...wheel, ...theme, ...theme]
+  const current = hexHue(palette.accent.slice(0, 7))
+  const fresh = all.filter((h) => hueGap(h, current) >= 24)
+  const hue = pick(fresh.length ? fresh : all)
+  const sat = 72 + Math.round(Math.random() * 20)
+  let light = (dark ? 54 : 30) + Math.round(Math.random() * 14)
+  let accent = hsl(hue, sat, light)
+  while (contrast(accent, back) < (dark ? 4 : 3.2) && light > 14 && light < 86) {
+    light += dark ? 3 : -3
+    accent = hsl(hue, sat, light)
+  }
+  const tint = base ?? hue
+  const wanted = dark ? pick(['#ffffff', '#ffffff', hsl(hue, 70, 92), hsl(tint, 45, 93)]) : pick(['#0f172a', hsl(tint, 55, 13), hsl(hue, 55, 14)])
+  const text = contrast(wanted, back) >= 4.5 ? wanted : dark ? '#ffffff' : '#0f172a'
+  return { accent, text }
+}
+
 /**
  * Cambia el aspecto de un diseño ya armado. `change` admite: layout (id de composición), mode ('dark'|'light'),
- * hue (0-360), logo ('light'|'dark'), deco (patrón o 'none') y removePhoto. Lo que no venga se mantiene.
+ * hue (0-360), logo ('light'|'dark'), deco (patrón o 'none'), contact (id de CONTACT_STYLES), colors ({ accent, bg, text })
+ * y removePhoto. Lo que no venga se mantiene.
  */
 export function restyle(design, info, change = {}) {
   const was = design.auto
@@ -170,8 +220,9 @@ export function restyle(design, info, change = {}) {
     const hue = change.hue ?? palette.hue ?? hexHue(palette.accent)
     palette = makePalette({ hue, dark: change.mode ? change.mode === 'dark' : palette.dark, exact: change.hue != null })
   }
+  if (change.colors) palette = paintPalette(palette, change.colors)
   const deco = change.deco === 'none' ? null : DECOS.includes(change.deco) ? change.deco : design.bg.deco?.type || pickDeco()
-  const d = buildDesign({ info, palette, layout: change.layout || was.layout, logo: change.logo || was.logo, photo, deco })
+  const d = buildDesign({ info, palette, layout: change.layout || was.layout, logo: change.logo || was.logo, contact: change.contact || was.contact, photo, deco })
   if (photo) return { ...d, bg: design.bg }
   return { ...d, bg: { ...d.bg, prompt: design.bg.prompt, scene: design.bg.scene } }
 }
@@ -186,8 +237,8 @@ export function toolsVariant(info) {
 
 /** Cambia los textos de un diseño ya armado (chat de correcciones) sin tocar su composición, colores ni fondo. */
 export function retext(design, info) {
-  const { layout, palette, photo, logo } = design.auto
-  return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, deco: null }).layers }
+  const { layout, palette, photo, logo, contact } = design.auto
+  return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, contact, deco: null }).layers }
 }
 
 /** Devuelve el estado completo del Composer (misma forma que su trabajo en curso). `text` puede ir vacío. */

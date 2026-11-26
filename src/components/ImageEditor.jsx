@@ -49,7 +49,7 @@ function drawCaret(ctx, b, pos, color, size) {
   ctx.restore()
 }
 
-const isShape = (l) => !!(l?.logo || l?.brand || l?.box) // logos y rectángulos: sin texto
+const isShape = (l) => !!(l?.logo || l?.brand || l?.box || l?.contact) // logos, rectángulos y contacto: sin texto libre
 // Al cambiar el tamaño a mano deja de limitarse el alto (si no, el ajuste automático impediría agrandar la letra)
 const resized = (l, size) => (l.fit ? { ...l, size, fit: { w: l.fit.w } } : { ...l, size })
 
@@ -398,7 +398,7 @@ export default function ImageEditor({ design, setDesign }) {
       const light = !wasImg && lum(design.bg.c1) > 0.6 // texto oscuro sobre fondo claro: pasa a blanco para leerse sobre la foto
       setBgImage(best, wasImg ? design.bg.dim : 0.6, true,
         { prompt: idea, scene: design.bg.scene, tweak, ...(wasImg ? {} : { fx: { ...FX_DEFAULT, detail: 30, contrast: 108, saturate: 105, vignette: 28 } }) },
-        light ? (l) => (l.bg || l.logo || l.brand || l.panel ? l : { ...l, color: '#ffffff', shadow: true }) : null)
+        light ? (l) => (l.bg || l.logo || l.brand || l.panel || l.contact ? l : { ...l, color: '#ffffff', shadow: true }) : null)
       if (!ok) setAiErr(t('Tras 3 intentos la imagen sigue con baja calidad ({r}). Puedes volver a pulsar el botón.', { r: lastWhy.join(', ') }))
     } catch (e) { setAiErr(e.message || String(e)) }
     setAiBusy(false)
@@ -605,7 +605,7 @@ export default function ImageEditor({ design, setDesign }) {
           <div className="chips">
             {design.layers.map((l, i) => (
               <button key={l.id} className={'chip' + (l.id === sel ? ' on' : '')} onClick={() => setSel(l.id)}>
-                {i + 1}. {l.logo || l.brand ? 'Logo' : l.box ? t('Rectángulo') : l.text.replace(/\n/g, ' ').slice(0, 14) || t('(vacío)')}
+                {i + 1}. {l.logo || l.brand ? 'Logo' : l.contact ? t('Contacto') : l.box ? t('Rectángulo') : l.text.replace(/\n/g, ' ').slice(0, 14) || t('(vacío)')}
               </button>
             ))}
           </div>
@@ -629,6 +629,14 @@ export default function ImageEditor({ design, setDesign }) {
               </div>
               </>}
               {layer.box && <label className="check">{t('Color')} <input type="color" value={(layer.bg || '#ffffff').slice(0, 7)} onChange={(e) => patchLayer({ bg: e.target.value + (layer.bg || '').slice(7) })} /></label>}
+              {layer.contact && <>
+                <input type="text" value={layer.contact.link} aria-label={t('Página web')} onChange={(e) => patchLayer({ contact: { ...layer.contact, link: e.target.value } })} />
+                <input type="tel" value={layer.contact.phone} aria-label="WhatsApp" onChange={(e) => patchLayer({ contact: { ...layer.contact, phone: e.target.value } })} />
+                <div className="row" style={{ alignItems: 'center' }}>
+                  <label className="check">{t('Color')} <input type="color" value={layer.color} onChange={(e) => patchLayer({ color: e.target.value })} /></label>
+                  <label className="check"><input type="checkbox" checked={!!layer.contact.stack} onChange={(e) => patchLayer({ contact: { ...layer.contact, stack: e.target.checked } })} /> {t('En dos líneas')}</label>
+                </div>
+              </>}
               {layer.brand && <>
                 <label className="inl"><span className="lbl">{t('Versión del logo')}</span>
                   <select value={layer.brand} onChange={(e) => patchLayer({ brand: e.target.value })} style={{ width: 'auto' }}>

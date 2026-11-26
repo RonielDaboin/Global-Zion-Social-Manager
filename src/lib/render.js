@@ -1,4 +1,7 @@
 import { getFormat } from './formats.js'
+import waSvg from 'simple-icons/icons/whatsapp.svg?raw'
+
+const WA_PATH = waSvg.match(/<path d="([^"]+)"/)?.[1] || ''
 
 const imgCache = new Map()
 export function loadImage(src) {
@@ -164,6 +167,83 @@ function drawBrand(ctx, x, y, W, version, plate, k) {
   ctx.restore()
 }
 
+/** Logo de WhatsApp en un círculo verde de diámetro `d` centrado en (x, y). */
+function drawWhatsApp(ctx, x, y, d) {
+  ctx.fillStyle = '#25d366'
+  ctx.beginPath(); ctx.arc(x, y, d / 2, 0, Math.PI * 2); ctx.fill()
+  const s = (d * 0.68) / 24
+  ctx.save()
+  ctx.translate(x - 12 * s, y - 12 * s); ctx.scale(s, s)
+  ctx.fillStyle = '#ffffff'; ctx.fill(new Path2D(WA_PATH))
+  ctx.restore()
+}
+
+/** Globo de línea en un solo color: sobre un fondo de color, el emoji 🌐 (azul) casi no se ve. */
+function drawGlobe(ctx, x, y, d, color) {
+  const r = d / 2
+  ctx.save()
+  ctx.strokeStyle = color; ctx.lineWidth = d * 0.08
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.stroke()
+  ctx.beginPath(); ctx.ellipse(x, y, r * 0.45, r, 0, 0, Math.PI * 2); ctx.stroke()
+  ctx.restore()
+}
+
+/** Pie de contacto: web y WhatsApp en una línea o en dos (`stack`). En estilo píldora lleva fondo (uno, o uno por dato con `split`). Devuelve la caja que ocupa. */
+function drawContact(ctx, l, w, h, k) {
+  const { link, phone, stack, border, mono } = l.contact
+  const bg = l.contact.style === 'pill' ? l.bg : ''
+  const split = !!bg && !!l.contact.split
+  const items = [{ text: link, wa: false }, { text: phone, wa: true }].filter((it) => it.text)
+  const n = items.length
+  const maxW = w * (l.fit?.w || 0.86)
+  let size = l.size * k, widths = [], padX = 0, bw = 0
+  const measure = () => {
+    ctx.font = `${l.weight} ${size}px "${l.font}", sans-serif`
+    widths = items.map((it) => size * 1.6 + ctx.measureText(it.text).width) // icono + separación + texto
+    padX = bg ? size * (split ? 0.7 : 0.9) : 0
+    const sum = widths.reduce((a, b) => a + b, 0)
+    bw = stack ? Math.max(0, ...widths) + padX * 2
+      : split ? sum + padX * 2 * n + size * 0.55 * Math.max(0, n - 1)
+        : sum + size * 1.4 * Math.max(0, n - 1) + padX * 2
+  }
+  measure()
+  while (size > 12 * k && bw > maxW) { size *= 0.95; measure() }
+  const padY = bg && !split ? size * 0.42 : 0
+  const row = size * (split ? 2.05 : 1.5) // alto de cada línea
+  const single = split ? size * 1.85 : row + padY * 2
+  const bh = stack ? row * n + padY * 2 : single
+  const cx = l.x * w, cy = l.y * h
+  const left = l.align === 'right' ? cx - bw : l.align === 'left' ? cx : cx - bw / 2
+  ctx.save()
+  if (l.opacity != null && l.opacity < 1) ctx.globalAlpha = l.opacity
+  if (l.rot) { ctx.translate(cx, cy); ctx.rotate((l.rot * Math.PI) / 180); ctx.translate(-cx, -cy) }
+  const plate = (x, y, pw, ph, radius) => {
+    ctx.save()
+    if (!l.flat) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 14 * k; ctx.shadowOffsetY = 4 * k }
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(x, y, pw, ph, radius); ctx.fill()
+    ctx.restore()
+    if (border) { ctx.strokeStyle = border; ctx.lineWidth = 3 * k; ctx.stroke() }
+  }
+  if (bg && !split) plate(left, cy - bh / 2, bw, bh, stack ? size * 0.8 : bh / 2)
+  ctx.textBaseline = 'middle'
+  let x = left
+  items.forEach((it, i) => {
+    const y = stack ? cy - (row * (n - 1)) / 2 + row * i : cy
+    if (split) plate(x, y - single / 2, stack ? bw : widths[i] + padX * 2, single, single / 2)
+    const tx = x + padX
+    ctx.fillStyle = l.color
+    if (it.wa) drawWhatsApp(ctx, tx + size * 0.6, y, size * 1.2)
+    else if (mono) drawGlobe(ctx, tx + size * 0.6, y, size * 1.05, l.color)
+    else { ctx.textAlign = 'center'; ctx.fillText('🌐', tx + size * 0.6, y) }
+    ctx.textAlign = 'left'
+    ctx.fillStyle = l.color
+    ctx.fillText(it.text, tx + size * 1.6, y)
+    if (!stack) x += widths[i] + (split ? padX * 2 + size * 0.55 : size * 1.4)
+  })
+  ctx.restore()
+  return { id: l.id, lock: l.lock, cx, cy, rot: l.rot || 0, x: left, y: cy - bh / 2, w: bw, h: bh }
+}
+
 /** Ajustes de imagen de fondo (valores neutros). */
 export const FX_DEFAULT = { detail: 0, brightness: 100, contrast: 100, saturate: 100, hue: 0, sepia: 0, gray: 0, blur: 0, warmth: 0, vignette: 0 }
 
@@ -267,6 +347,7 @@ export function drawDesign(ctx, d, img) {
   // Capas de texto (y stickers: texto con fondo en forma de píldora, círculo, sello, estrella…)
   const boxes = []
   for (const l of d.layers) {
+    if (l.contact) { boxes.push(drawContact(ctx, l, w, h, k)); continue }
     if (l.logo || l.brand || l.box) { // logos y rectángulos: no son texto
       const cx = l.x * w, cy = l.y * h
       const bw = l.logo || l.brand ? l.size * k : l.box.w * w * (l.size / 100)
