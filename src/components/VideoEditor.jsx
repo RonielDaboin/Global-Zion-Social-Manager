@@ -224,7 +224,10 @@ export default function VideoEditor({ file, video, setVideo, setFile, platforms,
     setTrim({ start: 0, end: d })
     setTime(0); setCur(0)
     wantCover.current = true
-    v.currentTime = Math.min(0.1, d / 2)
+    // Un video que viene de Contenido pide su portada en un segundo concreto (solo la primera vez que se carga)
+    const first = video?.autoCover ? Math.min(video.autoCover, Math.max(0, d - 0.1)) : Math.min(0.1, d / 2)
+    if (video?.autoCover) { setTime(first); setCur(first); setVideo((old) => ({ ...old, autoCover: 0 })) }
+    v.currentTime = first
   }
   // Solo recapturamos la portada cuando se pidió (no al arrastrar el recorte)
   const onSeeked = () => {

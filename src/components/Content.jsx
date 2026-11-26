@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom'
 import { useApp } from '../lib/store.jsx'
 import { blankDesign, uid } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
-import { saveVideo } from '../lib/mediaStore.js'
+import { videoDraft } from '../lib/contentDraft.js'
 import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon } from './ui.jsx'
 import {
   CONTENT_ACCEPT, CONTENT_DAYS, createCover, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
-  downloadContentBlob, expiresAt, fetchContent, markContentPublished, uploadContent, deleteContents, setAutoDelete,
+  expiresAt, fetchContent, markContentPublished, uploadContent, deleteContents, setAutoDelete,
 } from '../lib/content.js'
 
 const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB')
@@ -249,10 +249,7 @@ export default function Content({ use }) {
     try {
       const base = { id: uid(), fromContent: true, autoAI: ai, contentId: item.id, caption: '' }
       if (item.isVideo) {
-        const blob = await downloadContentBlob(item)
-        const file = new File([blob], item.name, { type: item.mime })
-        await saveVideo(base.id, file)
-        use({ ...base, mediaType: 'video', video: { name: item.name, size: item.size, duration: 0, width: 0, height: 0, cover: null, coverTime: 0 }, design: blankDesign() })
+        use(await videoDraft(item, { autoAI: ai }))
       } else {
         const img = await contentImage(item)
         const format = formatFor(img.width, img.height)

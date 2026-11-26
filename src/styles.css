@@ -2455,5 +2455,42 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
   .sheet { padding: 10px; }
   .sheet-head .btn { width: 100%; }
   .sheet-tones { display: grid; grid-template-columns: 1fr 1fr; }
-  .sheet-tones small { grid-column: 1 / -1; }
+  .sheet-tones small, .sheet-tones .chip:first-of-type { grid-column: 1 / -1; }
 }
+
+/* «Crear con IA»: elegir imagen o video */
+.ai-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ai-choice button { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 20px 14px; text-align: center; border: 1px solid var(--line); border-radius: 16px; background: var(--bg2); transition: transform .2s, border-color .2s, box-shadow .2s; }
+.ai-choice button:hover { transform: translateY(-3px); border-color: #dd2a7b; box-shadow: 0 14px 30px -18px #dd2a7b; }
+.ai-choice span { font-size: 38px; }
+.ai-choice b { font-size: 16px; }
+.ai-choice small { color: var(--muted); }
+/* Selector de videos */
+.modal.auto-post.auto-video { width: min(940px, 100%); grid-template-columns: minmax(0, 1fr); }
+.av-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.av-tools input { flex: 1 1 200px; width: auto; min-width: 0; }
+.av-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; max-height: min(48dvh, 520px); overflow-y: auto; overscroll-behavior: contain; padding: 3px; }
+.av-item { display: grid; gap: 4px; align-content: start; min-width: 0; padding: 4px; border: 2px solid transparent; border-radius: 14px; background: none; text-align: left; }
+.av-item:hover:not(:disabled) { border-color: var(--line); }
+.av-item.on, .av-item.on:hover { border-color: #dd2a7b; background: color-mix(in srgb, #dd2a7b 12%, transparent); }
+.av-item:disabled { cursor: not-allowed; }
+.av-item:disabled .av-thumb { opacity: .45; }
+.av-thumb { position: relative; display: grid; place-items: center; aspect-ratio: 9 / 16; overflow: hidden; border-radius: 10px; background: #0b1020; font-size: 34px; }
+.av-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.av-thumb em { position: absolute; left: 5px; bottom: 5px; right: 5px; padding: 3px 6px; border-radius: 8px; font-size: 11px; font-style: normal; font-weight: 700; text-align: center; color: #fff; background: #b45309; }
+.av-thumb em.scheduled { background: #1d4ed8; }
+.av-thumb i { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid #fff; border-radius: 50%; font-style: normal; font-size: 15px; font-weight: 800; color: #fff; background: #dd2a7b; }
+.av-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted); }
+.av-empty { grid-column: 1 / -1; padding: 22px 6px; text-align: center; }
+.av-chosen { overflow-wrap: anywhere; font-size: 13.5px; }
+.modal .row.av-actions { justify-content: space-between; }
+.av-actions > span { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+@media (max-width: 640px) {
+  .ai-choice { grid-template-columns: 1fr; }
+  .av-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); max-height: 34dvh; }
+  /* Los botones quedan siempre a la vista abajo: «Generar» a todo el ancho */
+  .modal .row.av-actions { position: sticky; bottom: -20px; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 -20px; padding: 10px 0 20px; background: var(--card); }
+  .av-actions > span { display: contents; }
+  .av-actions .btn.primary { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .ai-choice button { transition: none; } }

@@ -149,7 +149,7 @@ export default function App() {
         )}
         {storageFull && <div className="banner err">{t('El almacenamiento del navegador está lleno: elimina publicaciones antiguas con imágenes.')}</div>}
         {page === 'dashboard' && <Dashboard go={go} edit={edit} />}
-        {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} />}
+        {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} onOpen={edit} />}
         {page === 'content' && <Content use={edit} />}
         {page === 'posts' && <Posts edit={edit} go={go} />}
         {page === 'calendar' && <Calendar edit={edit} />}

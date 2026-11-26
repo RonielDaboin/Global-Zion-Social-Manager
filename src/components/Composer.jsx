@@ -6,6 +6,7 @@ import { generatePostSheetAI, shrinkImage, suggestHashtags } from '../lib/social
 import { t, useLang } from '../lib/i18n.jsx'
 import ImageEditor from './ImageEditor.jsx'
 import AutoPost from './AutoPost.jsx'
+import AutoVideo, { AutoChoice } from './AutoVideo.jsx'
 import EmojiButton from './EmojiPicker.jsx'
 import WhenPicker from './WhenPicker.jsx'
 import MusicStudio from './MusicStudio.jsx'
@@ -13,7 +14,7 @@ import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
 import { Icon, PlatformBadge } from './ui.jsx'
-import { composeCaption, normalizeTags, initialSheet } from '../lib/postSheet.js'
+import { composeCaption, normalizeTags, initialSheet, sheetFromCaption, withContact, CONTACT_LENGTH } from '../lib/postSheet.js'
 import { planFor, aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { LockTag } from './Plans.jsx'
 
@@ -23,13 +24,16 @@ const toLocalInput = (ts) => {
 }
 
 // Tonos que se le pueden pedir a la IA [valor, etiqueta]
-const TONES = [['profesional', 'Profesional'], ['inspirador', 'Inspirador'], ['promocional', 'Promocional'], ['divertido', 'Divertido']]
+const TONES = [['recomendado', '⭐ Recomendado'], ['profesional', 'Profesional'], ['inspirador', 'Inspirador'], ['promocional', 'Promocional'], ['divertido', 'Divertido']]
+const DEFAULT_TONE = 'recomendado'
+// Lo que se le explica a la IA con el tono por defecto (los demás se entienden con su nombre)
+const TONE_HINTS = { recomendado: 'equilibrado y pensado para vender: profesional pero cercano, claro y directo; un gancho que plantee la necesidad del cliente, beneficios concretos en frases cortas o lista y una invitación a contactar' }
 
 // Trabajo en curso: se guarda en el navegador para no perderlo al cambiar de sección ni al recargar (F5).
 const wipRead = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null } catch { return null } }
 const wipWrite = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* almacenamiento lleno: se ignora */ } }
 
-export default function Composer({ onDone, onDiscard }) {
+export default function Composer({ onDone, onDiscard, onOpen }) {
   const { draft, setDraft, savePost, publishNow, accounts, notify, session, posts, access, openPlans } = useApp()
   const lim = access.limits
   useLang()
@@ -57,8 +61,8 @@ export default function Composer({ onDone, onDiscard }) {
   const [subject, setSubject] = useState(src.subject || '')
   const [recipients, setRecipients] = useState(src.recipients || '')
   const [when, setWhen] = useState(w?.when || (draft?.scheduledAt ? toLocalInput(draft.scheduledAt) : toLocalInput(Date.now() + 3600e3)))
-  const [tone, setTone] = useState(w?.tone || 'inspirador')
-  const [autoOpen, setAutoOpen] = useState(false)
+  const [tone, setTone] = useState(w?.tone || DEFAULT_TONE)
+  const [autoOpen, setAutoOpen] = useState(null) // «Crear con IA»: null | 'choose' | 'image' | 'video'
   const titleRef = useRef(null)
   const descRef = useRef(null)
   const [emojiField, setEmojiField] = useState('description') // dónde inserta el botón de emojis (el último campo usado)
@@ -178,8 +182,8 @@ export default function Composer({ onDone, onDiscard }) {
 
   // Rellena toda la publicación con el resultado del generador automático
   const applyAuto = (a) => {
-    setDesign(a.design); setSheet(initialSheet(null, a.caption)); setPlatforms(a.platforms); setWhen(a.when)
-    setTone(a.tone); setMediaType('photo'); setAutoOpen(false)
+    setDesign(a.design); setSheet(sheetFromCaption(a.caption)); setPlatforms(a.platforms); setWhen(a.when)
+    setTone(a.tone); setMediaType('photo'); setAutoOpen(null)
     notify(t('Publicación generada. Revísala antes de publicar.'))
   }
   /** Lo que ve la IA: fotogramas del video, o la imagen del diseño. */
@@ -201,8 +205,9 @@ export default function Composer({ onDone, onDiscard }) {
     try {
       const media = await mediaForAI()
       if (!media.image && !media.frames?.length) throw new Error(t('No se pudo leer el contenido'))
-      const out = await generatePostSheetAI({ topic: '', tone, networks: platforms.map((p) => PLATFORMS[p].name), maxLen, maxTags: tagLimit, mediaType, ...media })
-      const next = { title: out.title, description: out.description, tags: normalizeTags(out.tags), ai: true }
+      // se le deja a la IA el espacio que ocupan el WhatsApp y la web, que se agregan después
+      const out = await generatePostSheetAI({ topic: '', tone: TONE_HINTS[tone] || tone, networks: platforms.map((p) => PLATFORMS[p].name), maxLen: maxLen - CONTACT_LENGTH, maxTags: tagLimit, mediaType, ...media })
+      const next = { title: out.title, description: withContact(out.description), tags: normalizeTags(out.tags), ai: true }
       setSheet(next)
       if (!subject.trim()) setSubject(next.title) // el correo usa el título como asunto
       aiTextBump(session?.id)
@@ -239,10 +244,13 @@ export default function Composer({ onDone, onDiscard }) {
     <div className="page cmp">
       <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige imagen o video, escribe el texto y publica o programa.')}</p></div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn primary auto-btn" onClick={() => (lim.autoPost ? setAutoOpen(true) : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))}>✨ {t('Crear con IA')}{!lim.autoPost && <LockTag plan="PREMIUM" />}</button>
+          <button className="btn primary auto-btn" onClick={() => (lim.autoPost ? setAutoOpen('choose') : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))}>✨ {t('Crear con IA')}{!lim.autoPost && <LockTag plan="PREMIUM" />}</button>
           <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button>
         </div></header>
-      {autoOpen && <AutoPost onClose={() => setAutoOpen(false)} onGenerated={applyAuto} />}
+      {autoOpen === 'choose' && <AutoChoice onClose={() => setAutoOpen(null)} onImage={() => setAutoOpen('image')} onVideo={() => setAutoOpen('video')} />}
+      {autoOpen === 'image' && <AutoPost onClose={() => setAutoOpen(null)} onGenerated={applyAuto} />}
+      {/* El video se abre como publicación aparte: el trabajo que había en el editor se conserva */}
+      {autoOpen === 'video' && <AutoVideo onClose={() => setAutoOpen(null)} onBack={() => setAutoOpen('choose')} onReady={(d) => { setAutoOpen(null); onOpen(d) }} />}
 
       <div className="card">
         <h3>1 · {t('Tipo de contenido')}</h3>
