@@ -8,7 +8,7 @@ import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon } from './ui.jsx'
 import {
   CONTENT_ACCEPT, CONTENT_DAYS, createCover, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
-  expiresAt, fetchContent, markContentPublished, uploadContent, deleteContents, setAutoDelete,
+  expiresAt, fetchContent, markContentPublished, uploadContent, deleteContents, setAutoDelete, fetchB2Status,
 } from '../lib/content.js'
 
 const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB')
@@ -37,14 +37,20 @@ const formatFor = (w, h) => {
 
 const fmtSpace = (b) => (b >= 1073741824 ? +(b / 1073741824).toFixed(2) + ' GB' : b >= 1048576 ? Math.round(b / 1048576) + ' MB' : b > 0 ? Math.max(1, Math.round(b / 1024)) + ' KB' : '0 MB')
 
-/** Cuánto espacio está ocupado y cuánto queda. `total` es el del proyecto entero (null = no se pudo medir). */
-function StorageMeter({ items, total }) {
+/** Cuánto espacio está ocupado y cuánto queda, sumando Supabase y Backblaze.
+ *  `total` es lo ocupado en Supabase (proyecto entero); `b2` el estado de Backblaze. undefined = midiendo, null = falló. */
+function StorageMeter({ items, total: supa, b2 }) {
+  const extra = b2?.configured ? b2 : null
+  const sizeIn = (where) => items.filter((x) => x.storage === where).reduce((n, x) => n + x.size, 0)
   const mine = items.reduce((n, x) => n + x.size, 0)
-  const used = total == null ? null : Math.max(total, mine)
-  const free = used === null ? null : Math.max(0, STORAGE_LIMIT - used)
-  const pct = used === null ? 0 : Math.min(100, (used / STORAGE_LIMIT) * 100)
+  const supaUsed = supa == null ? null : Math.max(supa, sizeIn('supabase'))
+  const total = supa === undefined || b2 === undefined ? undefined : supa
+  const limit = STORAGE_LIMIT + (extra?.limit || 0)
+  const used = supaUsed === null || total === undefined ? null : supaUsed + (extra?.used || 0)
+  const free = used === null ? null : Math.max(0, limit - used)
+  const pct = used === null ? 0 : Math.min(100, (used / limit) * 100)
   const level = pct >= 90 ? ' full' : pct >= 75 ? ' warn' : ''
-  const width = (b) => Math.min(100, (b / STORAGE_LIMIT) * 100) + '%'
+  const width = (b) => Math.min(100, (b / limit) * 100) + '%'
   // Referencia de cuántos archivos más caben: según el peso medio de los ya subidos, o el máximo por archivo si no hay
   const avg = items.length ? mine / items.length : null
   const fits = free === null ? null : Math.floor(free / (avg || CONTENT_MAX_MB * 1048576))
@@ -53,7 +59,7 @@ function StorageMeter({ items, total }) {
       <div className="lib-space-nums">
         <div><small>{t('Ocupado')}</small><b>{used === null ? '—' : fmtSpace(used)}</b></div>
         <div className="free"><small>{t('Disponible')}</small><b>{free === null ? '—' : fmtSpace(free)}</b></div>
-        <div><small>{t('Límite total')}</small><b>{fmtSpace(STORAGE_LIMIT)}</b></div>
+        <div><small>{t('Límite total')}</small><b>{fmtSpace(limit)}</b></div>
         <div><small>{t('Archivos en Contenido')}</small><b>{items.length}</b></div>
       </div>
       <div className="lib-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(pct)} aria-label={t('Espacio ocupado')}>
@@ -65,6 +71,9 @@ function StorageMeter({ items, total }) {
         {used !== null && <span><i className="rest" />{t('Publicaciones y otros: {s}', { s: fmtSpace(used - mine) })}</span>}
         {used !== null && <span className="pct">{t('{n} % ocupado', { n: pct > 0 && pct < 1 ? '<1' : Math.round(pct) })}</span>}
       </div>
+      {extra && used !== null && (
+        <p className="muted">Supabase: {t('{u} de {l}', { u: fmtSpace(supaUsed), l: fmtSpace(STORAGE_LIMIT) })} · Backblaze: {t('{u} de {l}', { u: fmtSpace(extra.used), l: fmtSpace(extra.limit) })}. {t('Lo nuevo se guarda en Backblaze hasta los {s}; después, en Supabase.', { s: fmtSpace(extra.stop) })}</p>
+      )}
       <p className="muted">
         {free === null ? (total === undefined ? t('Midiendo el espacio…') : t('No se pudo medir el espacio total en este momento.'))
           : fits < 1 ? t('Queda poco espacio: elimina contenido para poder subir más.')
@@ -180,6 +189,7 @@ export default function Content({ use }) {
   const [ask, setAsk] = useState(null) // {type: 'delete' | 'mark', item}
   const [busy, setBusy] = useState(null) // {id, mode} del archivo que se está abriendo en el editor
   const [total, setTotal] = useState(undefined) // bytes ocupados en todo el proyecto (undefined = midiendo, null = falló)
+  const [b2, setB2] = useState(undefined) // estado de Backblaze (undefined = midiendo, null = falló)
   const [policy, setPolicy] = useState({ autoDelete: true, since: null })
   const [savingPolicy, setSavingPolicy] = useState(false)
   const [selecting, setSelecting] = useState(false)
@@ -199,6 +209,7 @@ export default function Content({ use }) {
   useEffect(() => {
     if (count === undefined) return
     fetchStorageUsed().then((n) => alive.current && setTotal(n))
+    fetchB2Status().then((s) => alive.current && setB2(s))
   }, [count])
 
   // Crea de a una las portadas de video que falten (solo con la pestaña visible: en segundo plano el video no carga)
@@ -339,7 +350,7 @@ export default function Content({ use }) {
       </header>
       <input ref={input} type="file" accept={CONTENT_ACCEPT} multiple hidden onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
 
-      {!error && items !== null && <StorageMeter items={items} total={total} />}
+      {!error && items !== null && <StorageMeter items={items} total={total} b2={b2} />}
 
       {error ? (
         <div className="banner err lib-error"><span>{error}</span><button className="btn ghost sm" onClick={load}>{t('Reintentar')}</button></div>

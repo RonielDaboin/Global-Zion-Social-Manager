@@ -1,4 +1,5 @@
-// Biblioteca de contenido: archivos en el bucket privado `content` y sus datos en la tabla `content_items`.
+// Biblioteca de contenido: los datos están en la tabla `content_items` y cada archivo en uno de dos almacenamientos
+// privados: Backblaze B2 (función `b2-storage`, preferido para lo nuevo) o el bucket `content` de Supabase.
 // Un archivo se conserva hasta que se publica; desde ese momento tiene CONTENT_DAYS días de vigencia y luego se borra
 // (salvo que el borrado automático esté apagado).
 import { supabase } from './supabase.js'
@@ -36,7 +37,7 @@ export async function setAutoDelete(on) {
 
 const toItem = (r) => ({
   id: r.id, name: r.name, mime: r.mime, size: Number(r.size), path: r.path, thumb: r.thumb,
-  isVideo: r.mime.startsWith('video/'),
+  isVideo: r.mime.startsWith('video/'), storage: r.storage || 'supabase',
   createdAt: Date.parse(r.created_at), publishedAt: r.published_at ? Date.parse(r.published_at) : null,
 })
 
@@ -53,11 +54,44 @@ export async function fetchStorageUsed() {
   return error || data == null ? null : Number(data)
 }
 
+// ---- Backblaze B2 ----
+async function b2(action, body = {}) {
+  const { data, error } = await supabase.functions.invoke('b2-storage', { body: { action, ...body } })
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  return data
+}
+
+/** { configured, used, limit, stop } de Backblaze, o null si no se pudo consultar. */
+export const fetchB2Status = () => b2('status').catch(() => null)
+
+/** Sube el archivo a Backblaze. Devuelve false si no está configurado o ya no cabe (entonces va a Supabase). */
+async function uploadToB2(path, file) {
+  const status = await fetchB2Status()
+  if (!status?.configured || status.used + file.size > status.stop) return false
+  const { url, full } = await b2('upload-url', { path, mime: file.type, size: file.size })
+  if (full) return false
+  // Se envían los bytes: Safari en iPhone puede subir vacío un archivo enviado como Blob
+  const body = await file.arrayBuffer()
+  const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body }).catch(() => null)
+  if (!r?.ok) throw new Error(t('No se pudo subir a Backblaze. Revisa la configuración del almacenamiento e inténtalo de nuevo.'))
+  return true
+}
+
+const removeFile = async (where, paths) => {
+  if (!paths.length) return
+  if (where === 'b2') { await b2('delete', { paths }); return }
+  const { error } = await supabase.storage.from(BUCKET).remove(paths)
+  if (error) fail(error)
+}
+
 async function removeItems(items) {
   if (!items.length) return
   // Primero el archivo (es lo que ocupa memoria); si falla, la fila queda y se reintenta en la próxima limpieza
-  const { error } = await supabase.storage.from(BUCKET).remove(items.map((x) => x.path))
-  if (error) fail(error)
+  for (const where of ['supabase', 'b2']) await removeFile(where, items.filter((x) => x.storage === where).map((x) => x.path))
   const { error: e2 } = await supabase.from(TABLE).delete().in('id', items.map((x) => x.id))
   if (e2) fail(e2)
 }
@@ -145,21 +179,30 @@ export async function uploadContent(file) {
   const id = crypto.randomUUID()
   const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || file.type.split('/')[1]).toLowerCase()
   const path = `${ws}/${id}.${ext}`
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type })
-  if (error) fail(error)
-  const { data, error: e2 } = await supabase.from(TABLE).insert({ id, user_id: ws, name: file.name, mime: file.type, size: file.size, path, thumb }).select().single()
-  if (e2) { await supabase.storage.from(BUCKET).remove([path]); fail(e2) } // sin fila no habría forma de borrarlo después
+  const where = (await uploadToB2(path, file)) ? 'b2' : 'supabase'
+  if (where === 'supabase') {
+    const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type })
+    if (error) fail(error)
+  }
+  const { data, error: e2 } = await supabase.from(TABLE).insert({ id, user_id: ws, name: file.name, mime: file.type, size: file.size, path, thumb, storage: where }).select().single()
+  if (e2) { await removeFile(where, [path]).catch(() => {}); fail(e2) } // sin fila no habría forma de borrarlo después
   return toItem(data)
 }
 
 /** Enlace temporal (1 h) para ver el archivo; con `download` el navegador lo descarga. */
 export async function contentUrl(item, download = false) {
+  if (item.storage === 'b2') return (await b2('download-url', { path: item.path, name: download ? item.name : undefined })).url
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(item.path, 3600, download ? { download: item.name } : undefined)
   if (error) fail(error)
   return data.signedUrl
 }
 
 export async function downloadContentBlob(item) {
+  if (item.storage === 'b2') {
+    const r = await fetch(await contentUrl(item)).catch(() => null)
+    if (!r?.ok) throw new Error(t('No se pudo descargar el archivo de Backblaze.'))
+    return new Blob([await r.arrayBuffer()], { type: item.mime })
+  }
   const { data, error } = await supabase.storage.from(BUCKET).download(item.path)
   if (error) fail(error)
   return data

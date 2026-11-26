@@ -1184,5 +1184,9 @@ const EN = {
   'Alertas desactivadas en este dispositivo.': 'Alerts are off for this device.',
   'Alerta de prueba enviada: debería aparecer en unos segundos.': 'Test alert sent: it should appear in a few seconds.',
   'No se pudieron activar las alertas:': 'Alerts could not be turned on:',
+  'No se pudo subir a Backblaze. Revisa la configuración del almacenamiento e inténtalo de nuevo.': 'The upload to Backblaze failed. Check the storage setup and try again.',
+  'No se pudo descargar el archivo de Backblaze.': 'The file could not be downloaded from Backblaze.',
+  '{u} de {l}': '{u} of {l}',
+  'Lo nuevo se guarda en Backblaze hasta los {s}; después, en Supabase.': 'New files go to Backblaze up to {s}; after that, to Supabase.',
 }
 export default EN

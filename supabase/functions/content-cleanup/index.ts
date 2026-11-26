@@ -7,10 +7,25 @@
 //   supabase functions deploy content-cleanup --no-verify-jwt --project-ref bknwnurzxaxtkgnrriva
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { AwsClient } from 'npm:aws4fetch@1.0.20'
 
 const CONTENT_DAYS = 30 // igual que en src/lib/content.js
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+// Borra de Backblaze B2 los archivos que se guardaron allí (mismos secretos que la función b2-storage).
+async function removeFromB2(paths: string[]) {
+  if (!paths.length) return
+  const keyId = (Deno.env.get('B2_KEY_ID') || '').trim(), key = (Deno.env.get('B2_APP_KEY') || '').trim()
+  if (!keyId || !key) throw new Error('Faltan las claves de Backblaze')
+  const bucket = Deno.env.get('B2_BUCKET') || 'globalzion-contenido'
+  const endpoint = Deno.env.get('B2_ENDPOINT') || 's3.us-east-005.backblazeb2.com'
+  const aws = new AwsClient({ accessKeyId: keyId, secretAccessKey: key, service: 's3', region: endpoint.split('.')[1] })
+  for (const path of paths) {
+    const r = await aws.fetch(`https://${endpoint}/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'DELETE' })
+    if (!r.ok && r.status !== 404) throw new Error(`Backblaze no pudo borrar un archivo (${r.status})`)
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return reply({ error: 'Método no permitido' }, 405)
@@ -24,13 +39,17 @@ Deno.serve(async (req) => {
     .map((s) => s.user_id)
   let deleted = 0
   for (let round = 0; round < 20; round++) { // por lotes de 100
-    let query = db.from('content_items').select('id, path').lte('published_at', limit)
+    let query = db.from('content_items').select('id, path, storage').lte('published_at', limit)
     if (paused.length) query = query.not('user_id', 'in', `(${paused.join(',')})`)
     const { data, error } = await query.limit(100)
     if (error) return reply({ error: error.message }, 500)
     if (!data.length) break
-    const { error: e1 } = await db.storage.from('content').remove(data.map((x) => x.path))
-    if (e1) return reply({ error: e1.message }, 500)
+    const inSupabase = data.filter((x) => x.storage !== 'b2').map((x) => x.path)
+    if (inSupabase.length) {
+      const { error: e1 } = await db.storage.from('content').remove(inSupabase)
+      if (e1) return reply({ error: e1.message }, 500)
+    }
+    try { await removeFromB2(data.filter((x) => x.storage === 'b2').map((x) => x.path)) } catch (e) { return reply({ error: (e as Error).message }, 500) }
     const { error: e2 } = await db.from('content_items').delete().in('id', data.map((x) => x.id))
     if (e2) return reply({ error: e2.message }, 500)
     deleted += data.length
