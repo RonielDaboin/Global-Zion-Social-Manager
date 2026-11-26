@@ -1,5 +1,6 @@
 // Biblioteca de contenido: archivos en el bucket privado `content` y sus datos en la tabla `content_items`.
-// Un archivo se conserva hasta que se publica; desde ese momento tiene CONTENT_DAYS días de vigencia y luego se borra.
+// Un archivo se conserva hasta que se publica; desde ese momento tiene CONTENT_DAYS días de vigencia y luego se borra
+// (salvo que el borrado automático esté apagado).
 import { supabase } from './supabase.js'
 import { t } from './i18n.jsx'
 import { workspaceId } from './workspace.js'
@@ -12,9 +13,26 @@ export const CONTENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/m
 const BUCKET = 'content'
 const TABLE = 'content_items'
 
-export const expiresAt = (item) => (item.publishedAt ? item.publishedAt + CONTENT_DAYS * 86400000 : null)
-export const isExpired = (item, now = Date.now()) => !!item.publishedAt && expiresAt(item) <= now
-export const daysLeft = (item, now = Date.now()) => (item.publishedAt ? Math.max(0, Math.ceil((expiresAt(item) - now) / 86400000)) : null)
+/** Fecha en que se borrará solo, o null si no corresponde (sin publicar o con el borrado automático apagado). */
+export const expiresAt = (item, policy) => (policy?.autoDelete && item.publishedAt ? Math.max(item.publishedAt, policy.since || 0) + CONTENT_DAYS * 86400000 : null)
+export const isExpired = (item, policy, now = Date.now()) => { const at = expiresAt(item, policy); return at !== null && at <= now }
+export const daysLeft = (item, policy, now = Date.now()) => { const at = expiresAt(item, policy); return at === null ? null : Math.max(0, Math.ceil((at - now) / 86400000)) }
+
+/** Preferencia de borrado automático. Si no se puede leer se considera apagado: ante la duda no se borra nada. */
+export async function fetchPolicy() {
+  const { data, error } = await supabase.from('workspace_settings').select('content_autodelete,autodelete_since').maybeSingle()
+  if (error) return { autoDelete: false, since: null, unknown: true }
+  return { autoDelete: data ? data.content_autodelete : true, since: data?.autodelete_since ? Date.parse(data.autodelete_since) : null }
+}
+
+export async function setAutoDelete(on) {
+  const ws = await workspaceId()
+  if (!ws) throw new Error(t('Inicia sesión para continuar'))
+  const since = on ? Date.now() : null // al reactivarlo, lo ya publicado vuelve a tener la vigencia completa
+  const { error } = await supabase.from('workspace_settings').upsert({ user_id: ws, content_autodelete: on, autodelete_since: since ? new Date(since).toISOString() : null })
+  if (error) throw new Error(error.message)
+  return { autoDelete: on, since }
+}
 
 const toItem = (r) => ({
   id: r.id, name: r.name, mime: r.mime, size: Number(r.size), path: r.path, thumb: r.thumb,
@@ -46,13 +64,18 @@ async function removeItems(items) {
 
 export const deleteContent = (item) => removeItems([item])
 
-/** Lista el contenido del usuario; lo vencido se borra aquí mismo y no se devuelve. */
+/** Borrado masivo, por lotes de 100. */
+export async function deleteContents(items) {
+  for (let i = 0; i < items.length; i += 100) await removeItems(items.slice(i, i + 100))
+}
+
+/** { items, policy }. Con el borrado automático encendido, lo vencido se borra aquí mismo y no se devuelve. */
 export async function fetchContent() {
-  const { data, error } = await supabase.from(TABLE).select('*').order('created_at', { ascending: false })
+  const [{ data, error }, policy] = await Promise.all([supabase.from(TABLE).select('*').order('created_at', { ascending: false }), fetchPolicy()])
   if (error) fail(error)
   const all = (data || []).map(toItem)
-  await removeItems(all.filter((x) => isExpired(x))).catch(() => {})
-  return all.filter((x) => !isExpired(x))
+  await deleteContents(all.filter((x) => isExpired(x, policy))).catch(() => {})
+  return { items: all.filter((x) => !isExpired(x, policy)), policy }
 }
 
 /** Limpieza al abrir la app (además de la tarea diaria del servidor). */

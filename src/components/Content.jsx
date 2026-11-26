@@ -8,7 +8,7 @@ import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon } from './ui.jsx'
 import {
   CONTENT_ACCEPT, CONTENT_DAYS, createCover, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
-  downloadContentBlob, expiresAt, fetchContent, markContentPublished, uploadContent,
+  downloadContentBlob, expiresAt, fetchContent, markContentPublished, uploadContent, deleteContents, setAutoDelete,
 } from '../lib/content.js'
 
 const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB')
@@ -105,34 +105,62 @@ function Preview({ item, onClose }) {
   )
 }
 
-function ContentCard({ item, busy, onPreview, onUse, onDownload, onMark, onDelete }) {
-  const left = daysLeft(item)
+/** Botón para encender o apagar el borrado automático de lo ya publicado. */
+function AutoDelete({ policy, saving, onToggle }) {
+  const on = policy.autoDelete
+  return (
+    <section className={'lib-auto' + (on ? ' on' : '')}>
+      <span className="lib-auto-ico" aria-hidden="true"><Icon name="clock" size={18} /></span>
+      <div>
+        <b>{t('Borrado automático')}</b>
+        <p>{policy.unknown ? t('No se pudo leer este ajuste. Mientras tanto no se borra nada.')
+          : on ? t('Cada archivo se conserva hasta que lo publiques. Después tiene {n} días de vigencia y se elimina solo para liberar memoria.', { n: CONTENT_DAYS })
+            : t('Apagado: los archivos no se borran solos, aunque ya estén publicados. Elimínalos tú cuando quieras liberar espacio.')}</p>
+      </div>
+      <button type="button" className="lib-switch" role="switch" aria-checked={on} aria-label={t('Borrado automático')} disabled={saving || policy.unknown} onClick={() => onToggle(!on)}>
+        <span className="lib-switch-track" aria-hidden="true"><i /></span>
+        <span>{on ? t('Encendido') : t('Apagado')}</span>
+      </button>
+    </section>
+  )
+}
+
+function ContentCard({ item, policy, selecting, selected, onSelect, busy, onPreview, onUse, onDownload, onMark, onDelete }) {
+  const expires = expiresAt(item, policy)
+  const left = daysLeft(item, policy)
   const urgent = left !== null && left <= 5
   return (
-    <article className={'lib-card ' + (item.isVideo ? 'is-video' : 'is-image')}>
-      <button className="lib-thumb" onClick={onPreview} aria-label={t('Ver') + ' ' + item.name}>
+    <article className={'lib-card ' + (item.isVideo ? 'is-video' : 'is-image') + (selected ? ' selected' : '')}>
+      <button className="lib-thumb" onClick={selecting ? onSelect : onPreview} aria-pressed={selecting ? selected : undefined} aria-label={(selecting ? t('Seleccionar') : t('Ver')) + ' ' + item.name}>
         {item.thumb && item.isVideo && <span className="lib-backdrop" style={{ backgroundImage: `url(${item.thumb})` }} aria-hidden="true" />}
         {item.thumb ? <img className={item.isVideo ? 'whole' : undefined} src={item.thumb} alt="" loading="lazy" /> : <span className="lib-noimg">🎬</span>}
         <span className="lib-kind">{item.isVideo ? '▶ ' + t('Video') : t('Imagen')}</span>
         <span className={'lib-state' + (item.publishedAt ? (urgent ? ' urgent' : ' pub') : '')}>
-          {item.publishedAt ? (left === 1 ? t('Queda 1 día') : t('Quedan {n} días', { n: left })) : t('Sin publicar')}
+          {!item.publishedAt ? t('Sin publicar') : !expires ? t('Publicado') : left === 1 ? t('Queda 1 día') : t('Quedan {n} días', { n: left })}
         </span>
+        {selecting && <span className="lib-check" aria-hidden="true">{selected ? '✓' : ''}</span>}
       </button>
-      {item.publishedAt && (
-        <div className="lib-life" role="img" aria-label={t('Se elimina el {d}', { d: fmtDay(expiresAt(item)) })}>
+      {expires && (
+        <div className="lib-life" role="img" aria-label={t('Se elimina el {d}', { d: fmtDay(expires) })}>
           <i className={urgent ? 'urgent' : ''} style={{ width: Math.min(100, (left / CONTENT_DAYS) * 100) + '%' }} />
         </div>
       )}
       <div className="lib-body">
         <b className="lib-name" title={item.name}>{item.name}</b>
         <small className="muted">{fmtSize(item.size)} · {t('Subido el {d}', { d: fmtDay(item.createdAt) })}</small>
-        <small className="muted">{item.publishedAt ? t('Se elimina el {d}', { d: fmtDay(expiresAt(item)) }) : t('Se guarda hasta que lo publiques')}</small>
+        <small className="muted">{expires ? t('Se elimina el {d}', { d: fmtDay(expires) }) : item.publishedAt ? t('Publicado: no se borra solo') : t('Se guarda hasta que lo publiques')}</small>
+        {selecting ? (
+          <div className="lib-act">
+            <button type="button" className={'btn sm lib-use ' + (selected ? 'primary' : 'ghost')} aria-pressed={selected} onClick={onSelect}>{selected ? '✓ ' + t('Seleccionado') : t('Seleccionar')}</button>
+          </div>
+        ) : (
         <div className="lib-act">
           <button className="btn primary sm lib-use" disabled={busy} onClick={onUse}><Icon name="send" size={14} /> {busy ? t('Preparando…') : t('Usar en publicación')}</button>
           {!item.publishedAt && <button className="btn ghost sm" title={t('Marcar como publicado')} aria-label={t('Marcar como publicado')} onClick={onMark}><Icon name="check" size={15} /></button>}
           <button className="btn ghost sm" title={t('Descargar')} aria-label={t('Descargar')} onClick={onDownload}><Icon name="down" size={15} /></button>
           <button className="btn danger sm" title={t('Eliminar')} aria-label={t('Eliminar')} onClick={onDelete}><Icon name="trash" size={15} /></button>
         </div>
+        )}
       </div>
     </article>
   )
@@ -151,12 +179,17 @@ export default function Content({ use }) {
   const [ask, setAsk] = useState(null) // {type: 'delete' | 'mark', item}
   const [busyId, setBusyId] = useState(null)
   const [total, setTotal] = useState(undefined) // bytes ocupados en todo el proyecto (undefined = midiendo, null = falló)
+  const [policy, setPolicy] = useState({ autoDelete: true, since: null })
+  const [savingPolicy, setSavingPolicy] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState(() => new Set()) // ids marcados para borrar
+  const [deleting, setDeleting] = useState(false)
   const input = useRef(null)
   const alive = useRef(true)
 
   const load = () => {
     setError(null)
-    fetchContent().then((l) => alive.current && setItems(l)).catch((e) => { if (alive.current) { setItems([]); setError(e.message) } })
+    fetchContent().then((r) => { if (alive.current) { setItems(r.items); setPolicy(r.policy) } }).catch((e) => { if (alive.current) { setItems([]); setError(e.message) } })
   }
   useEffect(() => { alive.current = true; load(); return () => { alive.current = false } }, []) // eslint-disable-line
 
@@ -252,9 +285,48 @@ export default function Content({ use }) {
         const at = Date.now()
         await markContentPublished(item.id, at)
         setItems((l) => l.map((x) => (x.id === item.id ? { ...x, publishedAt: at } : x)))
-        notify(t('Marcado como publicado: se eliminará en {n} días.', { n: CONTENT_DAYS }))
+        notify(policy.autoDelete ? t('Marcado como publicado: se eliminará en {n} días.', { n: CONTENT_DAYS }) : t('Marcado como publicado.'))
       }
     } catch (e) { notify(e.message, 'err') }
+  }
+
+  const toggleAuto = async (on) => {
+    setSavingPolicy(true)
+    try {
+      setPolicy(await setAutoDelete(on))
+      notify(on ? t('Borrado automático encendido: lo ya publicado tiene {n} días desde hoy.', { n: CONTENT_DAYS }) : t('Borrado automático apagado.'))
+    } catch (e) { notify(e.message, 'err') }
+    if (alive.current) setSavingPolicy(false)
+  }
+
+  // ---- Selección para borrar varios ----
+  const stopSelecting = () => { setSelecting(false); setPicked(new Set()) }
+  const toggleOne = (id) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  /** Marca todos los de la lista, o los desmarca si ya estaban todos marcados. */
+  const toggleMany = (many) => setPicked((cur) => {
+    const n = new Set(cur)
+    const all = many.every((x) => n.has(x.id))
+    many.forEach((x) => { if (all) n.delete(x.id); else n.add(x.id) })
+    return n
+  })
+  const chosen = (items || []).filter((x) => picked.has(x.id))
+  const chosenSize = chosen.reduce((n, x) => n + x.size, 0)
+
+  const deleteChosen = async () => {
+    const targets = ask.items
+    setAsk(null)
+    setDeleting(true)
+    try {
+      await deleteContents(targets)
+      const gone = new Set(targets.map((x) => x.id))
+      setItems((l) => l.filter((x) => !gone.has(x.id)))
+      stopSelecting()
+      notify(targets.length === 1 ? t('Contenido eliminado') : t('{n} archivos eliminados', { n: targets.length }))
+    } catch (e) {
+      notify(e.message, 'err')
+      load() // pudo borrarse una parte: se vuelve a leer la lista
+    }
+    if (alive.current) setDeleting(false)
   }
 
   const byKind = (items || []).filter((x) => kind === 'all' || KINDS.find((k) => k.id === kind).test(x))
@@ -292,7 +364,7 @@ export default function Content({ use }) {
         </button>
       )}
 
-      <p className="lib-note"><Icon name="clock" size={16} /> <span>{t('Cada archivo se conserva hasta que lo publiques. Después tiene {n} días de vigencia y se elimina solo para liberar memoria.', { n: CONTENT_DAYS })}</span></p>
+      {!error && items !== null && <AutoDelete policy={policy} saving={savingPolicy} onToggle={toggleAuto} />}
 
       {!error && (
         <div className="lib-kinds" role="group" aria-label={t('Tipo de contenido')}>
@@ -309,6 +381,11 @@ export default function Content({ use }) {
           <div className="chips">{FILTERS.map(([id, label, test]) => (
             <button key={id} className={'chip' + (filter === id ? ' on' : '')} onClick={() => setFilter(id)}>{t(label)} ({byKind.filter(test).length})</button>
           ))}</div>
+          {!!items?.length && (
+            <button type="button" className={'btn sm lib-select ' + (selecting ? 'primary' : 'ghost')} aria-pressed={selecting} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+              <Icon name={selecting ? 'x' : 'check'} size={15} /> {selecting ? t('Salir de la selección') : t('Seleccionar para borrar')}
+            </button>
+          )}
         </div>
       )}
 
@@ -321,10 +398,12 @@ export default function Content({ use }) {
                   <span className="lib-group-ico" aria-hidden="true">{g.emoji}</span>
                   <h2 id={'lib-' + g.id}>{t(g.label)}</h2>
                   <small>{g.list.length} · {fmtSize(g.list.reduce((n, x) => n + x.size, 0))}</small>
+                  {selecting && <button type="button" className="btn ghost sm lib-group-pick" onClick={() => toggleMany(g.list)}>{g.list.every((x) => picked.has(x.id)) ? t('Quitar este bloque') : t('Marcar este bloque')}</button>}
                 </header>
                 <div className="lib-grid">
                   {g.list.map((item) => (
-                    <ContentCard key={item.id} item={item} busy={busyId === item.id}
+                    <ContentCard key={item.id} item={item} policy={policy} busy={busyId === item.id}
+                      selecting={selecting} selected={picked.has(item.id)} onSelect={() => toggleOne(item.id)}
                       onPreview={() => setPreview(item)} onUse={() => !busyId && useItem(item)} onDownload={() => download(item)}
                       onMark={() => setAsk({ type: 'mark', item })} onDelete={() => setAsk({ type: 'delete', item })} />
                   ))}
@@ -332,11 +411,34 @@ export default function Content({ use }) {
               </section>
             ))}
 
+      {selecting && (
+        <div className="lib-selbar" role="region" aria-label={t('Archivos seleccionados')}>
+          <b aria-live="polite">{chosen.length === 1 ? t('1 seleccionado') : t('{n} seleccionados', { n: chosen.length })}{chosen.length > 0 && <small> · {fmtSize(chosenSize)}</small>}</b>
+          <div>
+            <button type="button" className="btn ghost sm" disabled={!list.length || deleting} onClick={() => toggleMany(list)}>{list.length && list.every((x) => picked.has(x.id)) ? t('Quitar todos') : t('Seleccionar todos ({n})', { n: list.length })}</button>
+            <button type="button" className="btn ghost sm" disabled={deleting} onClick={stopSelecting}>{t('Cancelar')}</button>
+            <button type="button" className="btn sm lib-del" disabled={!chosen.length || deleting} onClick={() => setAsk({ type: 'bulk', items: chosen, hidden: chosen.filter((x) => !list.includes(x)).length })}>
+              <Icon name="trash" size={15} /> {deleting ? t('Eliminando…') : t('Eliminar ({n})', { n: chosen.length })}
+            </button>
+          </div>
+        </div>
+      )}
+
       {preview && <Preview item={preview} onClose={() => setPreview(null)} />}
-      {ask && (
+      {ask?.type === 'bulk' && (
+        <Dialog onClose={() => setAsk(null)}>
+          <h3>{ask.items.length === 1 ? t('¿Eliminar este contenido?') : t('¿Eliminar {n} archivos?', { n: ask.items.length })}</h3>
+          <p className="muted">{t('Se liberarán {s}. Esta acción no se puede deshacer.', { s: fmtSize(ask.items.reduce((n, x) => n + x.size, 0)) })}</p>
+          {ask.items.some((x) => !x.publishedAt) && <p className="warn">⚠️ {t('Sin publicar todavía: {n}', { n: ask.items.filter((x) => !x.publishedAt).length })}</p>}
+          {ask.hidden > 0 && <p className="warn">⚠️ {t('No se ven con el filtro actual: {n}', { n: ask.hidden })}</p>}
+          <button className="btn danger" onClick={deleteChosen}>{t('Eliminar ({n})', { n: ask.items.length })}</button>
+          <button className="btn ghost" onClick={() => setAsk(null)}>{t('Cancelar')}</button>
+        </Dialog>
+      )}
+      {ask && ask.type !== 'bulk' && (
         <Dialog onClose={() => setAsk(null)}>
           <h3>{ask.type === 'delete' ? t('¿Eliminar este contenido?') : t('¿Marcar como publicado?')}</h3>
-          <p className="muted">{ask.type === 'delete' ? t('Esta acción no se puede deshacer.') : t('Úsalo si lo publicaste fuera de la app. Desde ahora tendrá {n} días de vigencia y después se eliminará.', { n: CONTENT_DAYS })}</p>
+          <p className="muted">{ask.type === 'delete' ? t('Esta acción no se puede deshacer.') : policy.autoDelete ? t('Úsalo si lo publicaste fuera de la app. Desde ahora tendrá {n} días de vigencia y después se eliminará.', { n: CONTENT_DAYS }) : t('Úsalo si lo publicaste fuera de la app. El borrado automático está apagado, así que no se eliminará solo.')}</p>
           <button className={'btn ' + (ask.type === 'delete' ? 'danger' : 'primary')} onClick={confirm}>{ask.type === 'delete' ? t('Eliminar') : t('Marcar como publicado')}</button>
           <button className="btn ghost" onClick={() => setAsk(null)}>{t('Cancelar')}</button>
         </Dialog>
