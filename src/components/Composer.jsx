@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS, accountLabel, blankDesign, designFormats, getFormat, uid } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
-import { generateCaption, generateCaptionAI, generatePostSheetAI, shrinkImage, suggestHashtags, TONE_LIST } from '../lib/social.js'
+import { generatePostSheetAI, shrinkImage, suggestHashtags } from '../lib/social.js'
 import { t, useLang } from '../lib/i18n.jsx'
 import ImageEditor from './ImageEditor.jsx'
 import AutoPost from './AutoPost.jsx'
@@ -13,7 +13,7 @@ import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
 import { Icon, PlatformBadge } from './ui.jsx'
-import { composeCaption, normalizeTags } from '../lib/postSheet.js'
+import { composeCaption, normalizeTags, initialSheet } from '../lib/postSheet.js'
 import { planFor, aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { LockTag } from './Plans.jsx'
 
@@ -21,6 +21,9 @@ const toLocalInput = (ts) => {
   const d = new Date(ts - new Date().getTimezoneOffset() * 60000)
   return d.toISOString().slice(0, 16)
 }
+
+// Tonos que se le pueden pedir a la IA [valor, etiqueta]
+const TONES = [['profesional', 'Profesional'], ['inspirador', 'Inspirador'], ['promocional', 'Promocional'], ['divertido', 'Divertido']]
 
 // Trabajo en curso: se guarda en el navegador para no perderlo al cambiar de sección ni al recargar (F5).
 const wipRead = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null } catch { return null } }
@@ -47,18 +50,18 @@ export default function Composer({ onDone, onDiscard }) {
   const [contentId] = useState(src.contentId || null) // archivo de la sección Contenido usado en esta publicación
   const [createdAt] = useState(src.createdAt || null)
   const [design, setDesign] = useState(src.design || blankDesign())
-  const [caption, setCaption] = useState(src.caption || '')
+  // El texto que se publica se arma siempre con la ficha: título, descripción y tags
+  const [sheet, setSheet] = useState(() => initialSheet(src.sheet, src.caption))
+  const caption = composeCaption(sheet)
   const [platforms, setPlatforms] = useState(src.platforms || ['instagram'])
   const [subject, setSubject] = useState(src.subject || '')
   const [recipients, setRecipients] = useState(src.recipients || '')
   const [when, setWhen] = useState(w?.when || (draft?.scheduledAt ? toLocalInput(draft.scheduledAt) : toLocalInput(Date.now() + 3600e3)))
-  const [topic, setTopic] = useState(w?.topic || '')
   const [tone, setTone] = useState(w?.tone || 'inspirador')
-  const [useImage, setUseImage] = useState(w?.useImage ?? true)
-  const [genBusy, setGenBusy] = useState(false)
   const [autoOpen, setAutoOpen] = useState(false)
-  const capRef = useRef(null)
-  const [sheet, setSheet] = useState(src.sheet || null) // ficha con IA: { title, description, tags }
+  const titleRef = useRef(null)
+  const descRef = useRef(null)
+  const [emojiField, setEmojiField] = useState('description') // dónde inserta el botón de emojis (el último campo usado)
   const [sheetBusy, setSheetBusy] = useState(false)
   const [autoAI] = useState(() => !w && !!draft?.autoAI) // «Editar con IA» desde Contenido: se analiza al abrir
   const autoDone = useRef(false)
@@ -85,14 +88,14 @@ export default function Composer({ onDone, onDiscard }) {
   useEffect(() => { if (videoFile) saveVideo(id, videoFile).catch(() => {}) }, [videoFile, id])
 
   // Guardado automático del trabajo en curso (con pequeño retraso) + guardado final al salir o recargar
-  const snap = { id, contentId, sheet, editing, createdAt, design, caption, platforms, subject, recipients, when, topic, tone, useImage, mediaType, video }
+  const snap = { id, contentId, sheet, editing, createdAt, design, caption, platforms, subject, recipients, when, tone, mediaType, video }
   const snapRef = useRef(snap); snapRef.current = snap
   const stopped = useRef(false)
   const flush = () => { if (!stopped.current) wipWrite(wipKey, snapRef.current) }
   useEffect(() => {
     const tm = setTimeout(flush, 500)
     return () => clearTimeout(tm)
-  }, [design, caption, platforms, subject, recipients, when, topic, tone, useImage, mediaType, video, sheet]) // eslint-disable-line
+  }, [design, platforms, subject, recipients, when, tone, mediaType, video, sheet]) // eslint-disable-line
   useEffect(() => {
     window.addEventListener('pagehide', flush)
     return () => { window.removeEventListener('pagehide', flush); flush() }
@@ -175,7 +178,7 @@ export default function Composer({ onDone, onDiscard }) {
 
   // Rellena toda la publicación con el resultado del generador automático
   const applyAuto = (a) => {
-    setDesign(a.design); setCaption(a.caption); setPlatforms(a.platforms); setWhen(a.when); setTopic(a.topic || '')
+    setDesign(a.design); setSheet(initialSheet(null, a.caption)); setPlatforms(a.platforms); setWhen(a.when)
     setTone(a.tone); setMediaType('photo'); setAutoOpen(false)
     notify(t('Publicación generada. Revísala antes de publicar.'))
   }
@@ -198,10 +201,9 @@ export default function Composer({ onDone, onDiscard }) {
     try {
       const media = await mediaForAI()
       if (!media.image && !media.frames?.length) throw new Error(t('No se pudo leer el contenido'))
-      const out = await generatePostSheetAI({ topic, tone, networks: platforms.map((p) => PLATFORMS[p].name), maxLen, maxTags: tagLimit, mediaType, ...media })
-      const next = { title: out.title, description: out.description, tags: normalizeTags(out.tags) }
+      const out = await generatePostSheetAI({ topic: '', tone, networks: platforms.map((p) => PLATFORMS[p].name), maxLen, maxTags: tagLimit, mediaType, ...media })
+      const next = { title: out.title, description: out.description, tags: normalizeTags(out.tags), ai: true }
       setSheet(next)
-      setCaption(composeCaption(next))
       if (!subject.trim()) setSubject(next.title) // el correo usa el título como asunto
       aiTextBump(session?.id)
       notify(t('La IA preparó el título, la descripción y los tags. Revísalos antes de publicar.'))
@@ -221,41 +223,17 @@ export default function Composer({ onDone, onDiscard }) {
     genSheet().then(show)
   }, [videoFile]) // eslint-disable-line
 
-  /** Mientras el texto sea el armado con la ficha, cambiar un campo lo actualiza; si se editó a mano, no se pisa. */
-  const linked = !!sheet && caption === composeCaption(sheet)
-  const editSheet = (patch) => {
-    const next = { ...sheet, ...patch }
-    setSheet(next)
-    if (linked) setCaption(composeCaption(next))
-  }
+  const editSheet = (patch) => setSheet((cur) => ({ ...cur, ...patch }))
   const copy = (text) => { navigator.clipboard?.writeText(text); notify(t('Texto copiado')) }
-
-  const gen = async () => {
-    if (genBusy) return
-    if (!lim.aiText) { setCaption(generateCaption(topic, tone)); return notify(t('Texto creado con una plantilla. La IA de textos está disponible desde el plan PRO.')) }
-    if (aiTextUsed(session?.id) >= lim.aiTextPerDay) { setCaption(generateCaption(topic, tone)); openPlans(t('Llegaste al límite de {n} textos con IA de hoy. Se usó una plantilla.', { n: lim.aiTextPerDay })); return }
-    setGenBusy(true)
-    try {
-      let image = null, frames = null
-      if (useImage) {
-        if (isVideo) {
-          frames = videoFile ? await extractFrames(videoFile) : []
-          if (!frames.length && video?.cover) image = await shrinkImage(video.cover) // sin fotogramas: al menos la portada
-        } else {
-          const src = await renderToDataURL(design, 'image/jpeg', 0.8, 768)
-          image = src ? await shrinkImage(src) : null
-        }
-      }
-      const networks = platforms.map((p) => PLATFORMS[p].name)
-      setCaption(await generateCaptionAI({ topic, tone, networks, maxLen, maxTags: tagLimit, mediaType, image, frames }))
-      aiTextBump(session?.id)
-    } catch (e) {
-      setCaption(generateCaption(topic, tone))
-      notify(t('No se pudo usar la IA ({e}). Se usó una plantilla.', { e: e.message }), 'err')
-    }
-    setGenBusy(false)
+  /** Agrega hashtags sugeridos según el título (o la descripción) sin repetir los que ya están. */
+  const addTags = () => {
+    const have = normalizeTags(sheet.tags).split(' ').filter(Boolean)
+    const seen = new Set(have.map((x) => x.toLowerCase()))
+    const extra = suggestHashtags(sheet.title || sheet.description).filter((x) => !seen.has(x.toLowerCase()))
+    const room = Math.max(0, Math.min(tagLimit, 12) - have.length)
+    if (!room || !extra.length) return notify(t('Ya tienes suficientes hashtags.'))
+    editSheet({ tags: normalizeTags([...have, ...extra.slice(0, room)]) })
   }
-  const addTags = () => setCaption((c) => (c.trim() + '\n\n' + suggestHashtags(topic || c).join(' ')).trim())
 
   return (
     <div className="page cmp">
@@ -292,34 +270,38 @@ export default function Composer({ onDone, onDiscard }) {
         <div className="sheet" ref={sheetRef} aria-busy={sheetBusy}>
           <div className="sheet-head">
             <div><b>✨ {t('Título, descripción y tags con IA')}</b><small>{isVideo ? t('La IA mira varios fotogramas del video (no escucha el audio).') : t('La IA mira la imagen y lo que tiene escrito.')}</small></div>
-            <button type="button" className="btn primary sm" disabled={sheetBusy} onClick={genSheet}>{sheetBusy ? t('Analizando el contenido…') : sheet ? t('Generar de nuevo') : t('Generar con IA')}</button>
+            <button type="button" className="btn primary sm" disabled={sheetBusy} onClick={genSheet}>{sheetBusy ? t('Analizando el contenido…') : sheet.ai ? t('Generar de nuevo') : t('Generar con IA')}</button>
+          </div>
+          <div className="sheet-tones" role="group" aria-label={t('Tono del texto')}>
+            <small>{t('Tono del texto')}</small>
+            {TONES.map(([value, label]) => (
+              <button key={value} type="button" className={'chip' + (tone === value ? ' on' : '')} aria-pressed={tone === value} onClick={() => setTone(value)}>{t(label)}</button>
+            ))}
           </div>
           {sheetBusy && <span className="lib-bar" />}
-          {sheet && (
-            <div className="sheet-fields">
-              {[['title', 'Título'], ['description', 'Descripción'], ['tags', 'Tags']].map(([key, label]) => (
-                <div key={key} className="sheet-field">
-                  <div><label htmlFor={'sheet-' + key}>{t(label)}</label><button type="button" className="btn ghost sm" onClick={() => copy(key === 'tags' ? normalizeTags(sheet.tags) : sheet[key])} aria-label={t('Copiar') + ' ' + t(label)}><Icon name="copy" size={13} /></button></div>
-                  {key === 'description'
-                    ? <textarea id={'sheet-' + key} rows={5} value={sheet[key]} onChange={(e) => editSheet({ [key]: e.target.value })} />
-                    : <input id={'sheet-' + key} value={sheet[key]} onChange={(e) => editSheet({ [key]: e.target.value })} />}
+          <div className="sheet-fields">
+            {[['title', 'Título', 'Escribe un título o genera con IA'], ['description', 'Descripción', 'Escribe el texto de tu publicación…'], ['tags', 'Tags', '#hashtags']].map(([key, label, hint]) => (
+              <div key={key} className="sheet-field">
+                <div>
+                  <label htmlFor={'sheet-' + key}>{t(label)}</label>
+                  <span className="sheet-actions">
+                    {key === 'tags' && <button type="button" className="btn ghost sm" onClick={addTags}>{t('# Hashtags')}</button>}
+                    <button type="button" className="btn ghost sm" onClick={() => copy(key === 'tags' ? normalizeTags(sheet.tags) : sheet[key])} aria-label={t('Copiar') + ' ' + t(label)}><Icon name="copy" size={13} /></button>
+                  </span>
                 </div>
-              ))}
-              {!linked && <button type="button" className="btn ghost sm" onClick={() => setCaption(composeCaption(sheet))}>{t('Reemplazar el texto de la publicación con esta ficha')}</button>}
-            </div>
-          )}
+                {key === 'description'
+                  ? <textarea ref={descRef} id="sheet-description" rows={9} value={sheet.description} placeholder={t(hint)} onFocus={() => setEmojiField(key)} onChange={(e) => editSheet({ description: e.target.value })} />
+                  : <input ref={key === 'title' ? titleRef : undefined} id={'sheet-' + key} value={sheet[key]} placeholder={t(hint)}
+                    onFocus={key === 'title' ? () => setEmojiField(key) : undefined}
+                    onBlur={key === 'tags' ? () => editSheet({ tags: normalizeTags(sheet.tags) }) : undefined}
+                    onChange={(e) => editSheet({ [key]: e.target.value })} />}
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="gen">
-          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={t('Tema (ej. lanzamiento de producto)')} />
-          <select value={tone} onChange={(e) => setTone(e.target.value)}>{TONE_LIST.map((x) => <option key={x} value={x}>{t(x)}</option>)}</select>
-          <button className="btn ghost" disabled={genBusy} onClick={gen}><Icon name="magic" size={16} /> {genBusy ? t('Generando…') : t('Generar texto con IA')}</button>
-          <button className="btn ghost" onClick={addTags}>{t('# Hashtags')}</button>
-        </div>
-        <label className="check ai-opt"><input type="checkbox" checked={useImage} onChange={(e) => setUseImage(e.target.checked)} /> {isVideo ? t('Que la IA mire el video para escribir el texto') : t('Que la IA mire la imagen para escribir el texto')}</label>
-        <textarea ref={capRef} className="caption" rows={7} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={t('Escribe el texto de tu publicación…')} />
         <div className="counter">
           <span className="counter-l">
-            <EmojiButton inputRef={capRef} value={caption} onChange={setCaption} label />
+            <EmojiButton inputRef={emojiField === 'title' ? titleRef : descRef} value={sheet[emojiField]} onChange={(value) => editSheet({ [emojiField]: value })} label />
             <span className={caption.length > maxLen ? 'bad' : ''}>{caption.length}/{maxLen} {t('caracteres')}</span>
           </span>
           {tagLimit < 99 && <span className={tags > tagLimit ? 'bad' : ''}>{tags}/{tagLimit} hashtags</span>}

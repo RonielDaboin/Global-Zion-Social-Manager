@@ -13,3 +13,11 @@ export const composeCaption = (sheet) => [sheet.title, sheet.description, normal
   .map((x) => String(x || '').trim())
   .filter(Boolean)
   .join('\n\n')
+
+/** Ficha con la que se abre el editor. Si el texto guardado no sale de la ficha (publicaciones anteriores o
+ * escritas a mano), se conserva completo en la descripción. */
+export const initialSheet = (sheet, caption) => {
+  const text = String(caption || '')
+  if (sheet && composeCaption(sheet) === text.trim()) return sheet
+  return { title: '', description: text, tags: '' }
+}

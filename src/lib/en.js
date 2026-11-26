@@ -1069,5 +1069,12 @@ const EN = {
   'Tags': 'Tags',
   'Reemplazar el texto de la publicación con esta ficha': 'Replace the post text with these fields',
   'Editar con IA': 'Edit with AI',
+  'Tono del texto': 'Text tone',
+  'Inspirador': 'Inspirational',
+  'Promocional': 'Promotional',
+  'Divertido': 'Fun',
+  'Ya tienes suficientes hashtags.': 'You already have enough hashtags.',
+  'Escribe un título o genera con IA': 'Write a title or generate one with AI',
+  '#hashtags': '#hashtags',
 }
 export default EN
