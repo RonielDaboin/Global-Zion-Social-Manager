@@ -8,6 +8,8 @@ import { fetchPosts, fetchPostIndex, fetchPostsByIds, upsertPosts, deletePosts, 
 import { checkAccess, workspaceId } from './workspace.js'
 import { accessOf } from './plans.js'
 import { cleanupContent, markContentPublished } from './content.js'
+import { readPostCache, writePostCache } from './postCache.js'
+import { sendAlert, syncPush } from './push.js'
 
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
@@ -68,7 +70,9 @@ export function AppProvider({ children }) {
     syncedRef.current = {}; versionsRef.current = {}
     if (!session || member !== 'ok') { loadedFor.current = null; return }
     setAccounts(read(`gz_accounts_${key}`, {}))
-    const local = read(`gz_posts_${key}`, [])
+    let off = false
+    readPostCache(key).then((local) => {
+    if (off) return
     setPosts(local)
     loadedFor.current = key
     // Publicaciones en Supabase. La primera vez en este navegador se fusionan con las locales (y se suben);
@@ -82,6 +86,8 @@ export function AppProvider({ children }) {
       versionsRef.current = Object.fromEntries(rows.map((r) => [r.post.id, r.version]))
       cloudReady.current = true
       write(`gz_cloud_${key}`, true)
+      // Trabajo a medio editar de publicaciones ya publicadas: no sirve y ocupa espacio
+      merged.filter((p) => p.status === 'published').forEach((p) => { try { localStorage.removeItem(`gz_wip_${key}_${p.id}`) } catch { /* ignore */ } })
       // Lo que este navegador está publicando solo está al día en memoria: se conserva al recargar la lista
       setPosts((cur) => {
         const busy = cur.filter((p) => claiming.current.has(p.id))
@@ -90,6 +96,8 @@ export function AppProvider({ children }) {
       })
     }).catch(() => notify(t('No se pudo conectar con la nube; se usan los datos locales'), 'err'))
     loadSocial(key)
+    })
+    return () => { off = true }
     // Solo depende del usuario (key): antes dependía del objeto de sesión, que se recreaba en cada evento de Supabase
     // (volver a la pestaña, renovar token, guardar el perfil) y recargaba las publicaciones a mitad de una publicación.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,7 +151,7 @@ export function AppProvider({ children }) {
   // Solo las cuentas demo se guardan en el navegador; las reales viven en el servidor
   useEffect(() => { if (loadedFor.current === key) write(`gz_accounts_${key}`, Object.fromEntries(Object.entries(accounts).filter(([, v]) => !v.real))) }, [accounts, key])
   useEffect(() => {
-    if (loadedFor.current === key) setStorageFull(!write(`gz_posts_${key}`, posts))
+    if (loadedFor.current === key) writePostCache(key, posts).then((ok) => setStorageFull(!ok))
   }, [posts, key])
 
   // Guarda en Supabase lo que cambió (con una pequeña espera para agrupar cambios)
@@ -238,7 +246,7 @@ export function AppProvider({ children }) {
     return true
   }
 
-  useEffect(() => { if (session && member === 'ok') { cleanupPostMedia(); cleanupContent() } }, [session?.id, member]) // eslint-disable-line
+  useEffect(() => { if (session && member === 'ok') { cleanupPostMedia(); cleanupContent(); syncPush() } }, [session?.id, member]) // eslint-disable-line
 
   // Resultado de la ventana emergente de inicio de sesión (la app original no se recarga)
   useEffect(() => {
@@ -261,7 +269,10 @@ export function AppProvider({ children }) {
 
   // ---- Publicaciones ----
   const me = session ? { name: session.name, email: session.email, picture: session.picture || null } : null
-  const savePost = (p0) => {
+  // publishing = se guarda justo antes de «Publicar ahora», así que no cuenta como cancelación
+  const savePost = (p0, { publishing = false } = {}) => {
+    // Pasar una programada a borrador cancela la publicación
+    if (!publishing && p0.status === 'draft' && postsRef.current.find((x) => x.id === p0.id)?.status === 'scheduled') sendAlert('cancelled', p0)
     const p = p0.author || !me ? p0 : { ...p0, author: me } // quién creó la publicación
     setPosts((list) => {
       const i = list.findIndex((x) => x.id === p.id)
@@ -269,7 +280,11 @@ export function AppProvider({ children }) {
       return [p, ...list]
     })
   }
-  const deletePost = (id) => { deleteVideo(id); setPosts((l) => l.filter((p) => p.id !== id)) }
+  const deletePost = (id) => {
+    const gone = postsRef.current.find((p) => p.id === id)
+    if (gone?.status === 'scheduled') sendAlert('cancelled', gone)
+    deleteVideo(id); setPosts((l) => l.filter((p) => p.id !== id))
+  }
 
   const postsRef = useRef(posts); postsRef.current = posts
   const accountsRef = useRef(accounts); accountsRef.current = accounts
@@ -308,6 +323,7 @@ export function AppProvider({ children }) {
       ? { ...p, status: allOk ? 'published' : 'failed', results, publishedAt: allOk ? Date.now() : p.publishedAt, publishedBy: allOk ? (meRef.current || p.publishedBy) : p.publishedBy }
       : p)))
     claiming.current.delete(id)
+    sendAlert(allOk ? 'published' : 'failed', post, results)
     // Si usó un archivo de la sección Contenido y llegó a publicarse en alguna red, empieza su vigencia de 30 días
     if (post.contentId && Object.values(results).some((r) => r.ok && !r.demo)) markContentPublished(post.contentId).catch(() => {})
     const demo = Object.values(results).some((r) => r.demo)

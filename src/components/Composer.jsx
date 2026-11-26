@@ -169,7 +169,7 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
     if (isVideo && saveCopy && status !== 'draft') downloadVideo()
     setBusy(true)
     const post = await build(status === 'now' ? 'draft' : status)
-    savePost(post)
+    savePost(post, { publishing: status === 'now' })
     if (status === 'now') {
       // pequeña espera para que el estado se asiente antes de publicar
       setTimeout(() => publishNow(post.id), 50)

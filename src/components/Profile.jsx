@@ -6,6 +6,7 @@ import { accessOf } from '../lib/plans.js'
 import { PLATFORMS, accountLabel } from '../lib/formats.js'
 import { supabase, toSession } from '../lib/supabase.js'
 import { useUsageTime, fmtDur } from '../lib/useTime.js'
+import { AlertsCard } from './Alerts.jsx'
 
 const fmt = (d) => (d ? new Date(d).toLocaleDateString(locale(), { dateStyle: 'long' }) : '—')
 const PROV = { google: 'Google', email: 'Correo y contraseña' }
@@ -186,6 +187,8 @@ export default function Profile({ onLogout }) {
         <Stat label={t('Tiempo total de uso')} value={fmtDur(use.total)} />
         <Stat label={t('Sesiones iniciadas')} value={use.sessions} />
       </div>
+
+      <AlertsCard />
 
       <div className="card pf-contact">
         <div className="pf-title">

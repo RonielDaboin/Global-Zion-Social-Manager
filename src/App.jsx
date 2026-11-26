@@ -12,6 +12,7 @@ import Content from './components/Content.jsx'
 import { useUsageTime } from './lib/useTime.js'
 import Profile from './components/Profile.jsx'
 import PlansModal from './components/Plans.jsx'
+import { AlertsBanner } from './components/Alerts.jsx'
 import Legal, { Footer } from './components/Legal.jsx'
 import { useLang, t } from './lib/i18n.jsx'
 import { Logo, Icon, ThemeToggle, LangToggle, Avatar } from './components/ui.jsx'
@@ -148,6 +149,7 @@ export default function App() {
           </div>
         )}
         {storageFull && <div className="banner err">{t('El almacenamiento del navegador está lleno: elimina publicaciones antiguas con imágenes.')}</div>}
+        {page === 'dashboard' && <AlertsBanner />}
         {page === 'dashboard' && <Dashboard go={go} edit={edit} />}
         {page === 'composer' && <Composer key={composerKey + ':' + (draft?.id || '')} onDone={() => setPage('posts')} onDiscard={() => setComposerKey((k) => k + 1)} onOpen={edit} />}
         {page === 'content' && <Content use={edit} />}

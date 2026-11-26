@@ -6,7 +6,7 @@
  * Las redes que el servidor aún no tiene configuradas funcionan en MODO DEMO (simulado).
  */
 import { t, getLang } from './i18n.jsx'
-import { loadVideo } from './mediaStore.js'
+import { loadVideo, videoBytes } from './mediaStore.js'
 import { designFormats, formatsFor, getFormat } from './formats.js'
 import { renderToDataURL } from './render.js'
 import { supabase } from './supabase.js'
@@ -99,14 +99,16 @@ async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) 
   if (kind === 'video') {
     blob = await loadVideo(post.id)
     if (!blob) throw new Error(t('No se encontró el video guardado'))
-    ext = (blob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov')
+    ext = ((blob.type || 'video/mp4').split('/')[1] || 'mp4').replace('quicktime', 'mov')
   } else {
     blob = await (await fetch(src)).blob()
     ext = blob.type === 'image/png' ? 'png' : 'jpg'
   }
   const path = `${ws}/${post.id}${tag}-${Date.now()}.${ext}`
-  const { error } = await supabase.storage.from('post-media').upload(path, blob, { contentType: blob.type, upsert: true })
-  if (error) throw new Error(error.message)
+  // El video se envía como bytes: como Blob, Safari en iPhone puede subirlo vacío
+  const body = kind === 'video' ? await videoBytes(blob) : blob
+  const { error } = await supabase.storage.from('post-media').upload(path, body, { contentType: blob.type || (kind === 'video' ? 'video/mp4' : 'image/jpeg'), upsert: true })
+  if (error) throw new Error(/exceeded the maximum/i.test(error.message) ? t('El video pesa demasiado para subirlo (máximo 50 MB). Recórtalo en el editor o comprímelo.') : error.message)
   sink?.push(path)
   return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
 }
