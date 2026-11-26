@@ -125,7 +125,7 @@ function AutoDelete({ policy, saving, onToggle }) {
   )
 }
 
-function ContentCard({ item, policy, selecting, selected, onSelect, busy, onPreview, onUse, onDownload, onMark, onDelete }) {
+function ContentCard({ item, policy, selecting, selected, onSelect, busy, onPreview, onUse, onEdit, onDownload, onMark, onDelete }) {
   const expires = expiresAt(item, policy)
   const left = daysLeft(item, policy)
   const urgent = left !== null && left <= 5
@@ -155,7 +155,8 @@ function ContentCard({ item, policy, selecting, selected, onSelect, busy, onPrev
           </div>
         ) : (
         <div className="lib-act">
-          <button className="btn primary sm lib-use" disabled={busy} onClick={onUse}><Icon name="send" size={14} /> {busy ? t('Preparando…') : t('Usar en publicación')}</button>
+          <button className="btn primary sm lib-use" disabled={!!busy} onClick={onEdit}><Icon name="edit" size={14} /> {busy === 'ai' ? t('Preparando…') : t('Editar con IA')}</button>
+          <button className="btn ghost sm lib-use" disabled={!!busy} onClick={onUse}><Icon name="send" size={14} /> {busy === 'use' ? t('Preparando…') : t('Usar en publicación')}</button>
           {!item.publishedAt && <button className="btn ghost sm" title={t('Marcar como publicado')} aria-label={t('Marcar como publicado')} onClick={onMark}><Icon name="check" size={15} /></button>}
           <button className="btn ghost sm" title={t('Descargar')} aria-label={t('Descargar')} onClick={onDownload}><Icon name="down" size={15} /></button>
           <button className="btn danger sm" title={t('Eliminar')} aria-label={t('Eliminar')} onClick={onDelete}><Icon name="trash" size={15} /></button>
@@ -177,7 +178,7 @@ export default function Content({ use }) {
   const [over, setOver] = useState(false)
   const [preview, setPreview] = useState(null)
   const [ask, setAsk] = useState(null) // {type: 'delete' | 'mark', item}
-  const [busyId, setBusyId] = useState(null)
+  const [busy, setBusy] = useState(null) // {id, mode} del archivo que se está abriendo en el editor
   const [total, setTotal] = useState(undefined) // bytes ocupados en todo el proyecto (undefined = midiendo, null = falló)
   const [policy, setPolicy] = useState({ autoDelete: true, since: null })
   const [savingPolicy, setSavingPolicy] = useState(false)
@@ -241,12 +242,12 @@ export default function Content({ use }) {
 
   const drop = (e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files) }
 
-  // Crea una publicación nueva a partir del archivo y abre el editor
-  const useItem = async (item) => {
+  // Crea una publicación nueva a partir del archivo y abre el editor (con `ai`, la IA lo analiza al abrir)
+  const useItem = async (item, ai = false) => {
     if (item.isVideo && !access.limits.video) return openPlans(t('El editor de video está disponible desde el plan PRO.'))
-    setBusyId(item.id)
+    setBusy({ id: item.id, mode: ai ? 'ai' : 'use' })
     try {
-      const base = { id: uid(), fromContent: true, contentId: item.id, caption: '' }
+      const base = { id: uid(), fromContent: true, autoAI: ai, contentId: item.id, caption: '' }
       if (item.isVideo) {
         const blob = await downloadContentBlob(item)
         const file = new File([blob], item.name, { type: item.mime })
@@ -261,7 +262,7 @@ export default function Content({ use }) {
       }
     } catch (e) {
       notify(e.message, 'err')
-      if (alive.current) setBusyId(null)
+      if (alive.current) setBusy(null)
     }
   }
 
@@ -402,9 +403,9 @@ export default function Content({ use }) {
                 </header>
                 <div className="lib-grid">
                   {g.list.map((item) => (
-                    <ContentCard key={item.id} item={item} policy={policy} busy={busyId === item.id}
+                    <ContentCard key={item.id} item={item} policy={policy} busy={busy?.id === item.id ? busy.mode : null}
                       selecting={selecting} selected={picked.has(item.id)} onSelect={() => toggleOne(item.id)}
-                      onPreview={() => setPreview(item)} onUse={() => !busyId && useItem(item)} onDownload={() => download(item)}
+                      onPreview={() => setPreview(item)} onUse={() => !busy && useItem(item)} onEdit={() => !busy && useItem(item, true)} onDownload={() => download(item)}
                       onMark={() => setAsk({ type: 'mark', item })} onDelete={() => setAsk({ type: 'delete', item })} />
                   ))}
                 </div>

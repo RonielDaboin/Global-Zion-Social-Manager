@@ -56,19 +56,28 @@ Deno.serve(async (req) => {
   const frames = (Array.isArray(b.frames) ? b.frames : []).filter((f): f is string => typeof f === 'string').slice(0, 8)
   const mediaType = b.mediaType === 'video' ? (frames.length ? 'video (se te dan fotogramas en orden cronológico)' : 'video (se te da la portada)') : 'foto o diseño'
   const image = typeof b.image === 'string' ? b.image : ''
+  // Ficha: título, descripción y tags por separado (en vez de un solo texto)
+  const sheet = b.structured === true
+  const tagCount = Math.min(maxTags, 8)
 
   const instructions = [
     `Eres el community manager de Global Zion, una agencia chilena de diseño y desarrollo web.`,
     KNOWLEDGE,
     KNOWLEDGE_RULES,
-    `Escribe el texto (caption) de una publicación en ${lang}.`,
+    sheet ? `Prepara la ficha de una publicación en ${lang}: título, descripción y tags.` : `Escribe el texto (caption) de una publicación en ${lang}.`,
     `Tono: ${tone}. Tipo de contenido: ${mediaType}. Redes: ${networks || 'redes sociales'}.`,
     topic ? `Tema indicado por el usuario: "${topic}".` : `El usuario no indicó tema: básate en lo que muestra la imagen.`,
     frames.length ? `Se adjuntan ${frames.length} fotogramas del video en orden cronológico: deduce de qué trata y qué ocurre, y conecta el texto con eso; no inventes datos, nombres ni sonido que no puedas ver.` : '',
     image ? `Se adjunta la imagen de la publicación: descríbela con naturalidad y conecta el texto con lo que se ve; no inventes datos que no aparezcan.` : '',
-    `Reglas: máximo ${Math.max(40, maxLen - 30)} caracteres en total (incluyendo hashtags y espacios; no te pases). Empieza con un gancho que llame la atención.`,
-    `Usa emojis con moderación, saltos de línea para facilitar la lectura y cierra con una llamada a la acción.`,
-    maxTags > 0 ? `Termina con hasta ${Math.min(maxTags, 8)} hashtags relevantes.` : 'No uses hashtags.',
+    sheet ? `Lee los textos que aparezcan escritos en el contenido (titulares, precios, servicio ofrecido) y respétalos tal cual.` : '',
+    sheet ? `«title»: un gancho claro de máximo 70 caracteres, con uno o dos emojis que encajen con el tema y sin hashtags.` : '',
+    sheet ? `«description»: no repitas el título; usa saltos de línea y cierra con una llamada a la acción. Sin hashtags.` : '',
+    sheet ? (tagCount > 0 ? `«tags»: hasta ${tagCount} hashtags relevantes, sin espacios dentro de cada uno.` : '«tags»: lista vacía.') : '',
+    sheet ? `Entre título, descripción y tags no superes ${Math.max(40, maxLen - 40)} caracteres.` : `Reglas: máximo ${Math.max(40, maxLen - 30)} caracteres en total (incluyendo hashtags y espacios; no te pases). Empieza con un gancho que llame la atención.`,
+    sheet ? '' : `Usa saltos de línea para facilitar la lectura y cierra con una llamada a la acción.`,
+    // Regla fija del negocio: los textos siempre llevan emojis
+    `Incluye SIEMPRE emojis que correspondan a lo que dice cada frase (por ejemplo 💻 para computadores, 🔒 para seguridad, 🛒 para tiendas online): en cada párrafo o punto de lista pon al menos uno que encaje, sin amontonar varios seguidos. Los hashtags van sin emojis.`,
+    sheet ? '' : maxTags > 0 ? `Termina con hasta ${Math.min(maxTags, 8)} hashtags relevantes.` : 'No uses hashtags.',
     `No uses comillas alrededor del texto ni expliques lo que hiciste. Devuelve únicamente el JSON pedido.`,
   ].filter(Boolean).join('\n')
 
@@ -84,6 +93,8 @@ Deno.serve(async (req) => {
   const call = (thinking: boolean, model: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    // Un modelo saturado a veces no contesta nada: se corta y se prueba el siguiente (el total queda bajo los 150 s de Supabase)
+    signal: AbortSignal.timeout(model.includes('lite') ? 40000 : 20000),
     body: JSON.stringify({
       contents: [{ role: 'user', parts }],
       generationConfig: {
@@ -91,11 +102,9 @@ Deno.serve(async (req) => {
         // Un caption corto no necesita razonar mucho: el nivel mínimo baja la espera de ~90 s a pocos segundos.
         ...(thinking ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
         responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: { caption: { type: 'STRING' } },
-          required: ['caption'],
-        },
+        responseSchema: sheet
+          ? { type: 'OBJECT', properties: { title: { type: 'STRING' }, description: { type: 'STRING' }, tags: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['title', 'description', 'tags'] }
+          : { type: 'OBJECT', properties: { caption: { type: 'STRING' } }, required: ['caption'] },
       },
     }),
   })
@@ -103,8 +112,14 @@ Deno.serve(async (req) => {
   const order = [model, ...ALLOWED.filter((x) => x !== model)]
   let res!: Response
   for (const m of order) {
-    res = await call(true, m)
-    if (res.status === 400) res = await call(false, m) // por si el modelo no admite ese ajuste
+    try {
+      res = await call(true, m)
+      if (res.status === 400) res = await call(false, m) // por si el modelo no admite ese ajuste
+    } catch (e) {
+      console.warn('Gemini sin respuesta con', m, (e as Error).name, '→ probando otro modelo')
+      res = new Response(JSON.stringify({ error: { message: 'Gemini no respondió a tiempo. Intenta de nuevo en un minuto.' } }), { status: 503 })
+      continue
+    }
     if (res.status !== 429 && res.status !== 503) break
     console.warn('Gemini', res.status, 'con', m, '→ probando otro modelo')
   }
@@ -119,6 +134,15 @@ Deno.serve(async (req) => {
 
   const data = await res.json()
   const raw = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || ''
+  if (sheet) {
+    let out: { title?: unknown; description?: unknown; tags?: unknown } = {}
+    try { out = JSON.parse(raw) } catch { /* se informa abajo */ }
+    const title = String(out.title || '').trim()
+    const description = String(out.description || '').trim()
+    const tags = (Array.isArray(out.tags) ? out.tags : []).map((x) => String(x).trim()).filter(Boolean).slice(0, tagCount)
+    if (!title && !description) return json({ error: 'Gemini no devolvió texto (puede haber bloqueado el contenido)' }, 502)
+    return json({ title, description, tags })
+  }
   let caption = ''
   try { caption = JSON.parse(raw).caption } catch { caption = raw }
   caption = String(caption || '').trim()

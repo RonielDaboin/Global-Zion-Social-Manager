@@ -255,6 +255,20 @@ export async function generateCaptionAI({ topic, tone, networks, maxLen, maxTags
   return data.caption
 }
 
+/** Mira la imagen o los fotogramas del video y devuelve { title, description, tags } con Gemini. */
+export async function generatePostSheetAI({ topic, tone, networks, maxLen, maxTags, mediaType, image, frames }) {
+  const { data, error } = await invokeFn('generate-caption', { structured: true, topic, tone, networks, maxLen, maxTags, mediaType, image, frames, lang: getLang() }, 150000)
+  if (error) {
+    let msg = error.message
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
+    logAI('gemini', 'Textos', isLimitMsg(msg) ? 'limit' : 'error')
+    throw new Error(msg)
+  }
+  if (!data?.title && !data?.description) throw new Error(data?.error || t('La IA no devolvió texto'))
+  logAI('gemini', 'Textos')
+  return { title: data.title || '', description: data.description || '', tags: data.tags || [] }
+}
+
 /** Escribe los textos del diseño (uno por capa activa, en orden) con Gemini vía `generate-texts`. */
 export async function generateLayerTextsAI({ layers, topic }) {
   const { data, error } = await invokeFn('generate-texts', { layers: layers.map((l) => ({ text: l.text, size: l.size, y: l.y })), topic, lang: getLang() }, 25000)
