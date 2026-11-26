@@ -2336,6 +2336,24 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .lib-note { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); font-size: 13.5px; }
 .lib-note svg { flex: none; margin-top: 2px; }
 .lib-bar-row { align-items: center; }
+/* Videos e imágenes: cada tipo con su color (rosa y turquesa) */
+.lib-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.lib-kind-btn, .lib-group { --kc: #6a5be0; }
+.lib-kind-btn.video, .lib-group.video, .lib-card.is-video { --kc: #dd2a7b; }
+.lib-kind-btn.image, .lib-group.image, .lib-card.is-image { --kc: #0891b2; }
+.lib-kind-btn { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; min-width: 0; min-height: 48px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-weight: 700; transition: border-color .2s, background .2s, box-shadow .2s; }
+.lib-kind-btn b { padding: 0 9px; border-radius: 999px; font-size: 12.5px; background: color-mix(in srgb, var(--kc) 18%, transparent); }
+.lib-kind-btn:hover { border-color: var(--kc); }
+.lib-kind-btn.on { border-color: var(--kc); background: color-mix(in srgb, var(--kc) 14%, var(--card)); box-shadow: inset 0 0 0 1px var(--kc); }
+.lib-group { display: grid; gap: 12px; min-width: 0; }
+.lib-group > header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 2px solid color-mix(in srgb, var(--kc) 55%, transparent); }
+.lib-group > header h2 { margin: 0; font-size: 19px; }
+.lib-group > header small { color: var(--muted); }
+.lib-group-ico { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; font-size: 18px; background: color-mix(in srgb, var(--kc) 20%, transparent); }
+.lib-group + .lib-group { margin-top: 10px; }
+.lib-card.is-video, .lib-card.is-image { border-top: 3px solid var(--kc); }
+.lib-card .lib-kind { background: var(--kc); }
+@media (max-width: 400px) { .lib-kinds { gap: 6px; } .lib-kind-btn { font-size: 13px; } }
 .lib-space { display: grid; gap: 12px; --level: var(--green); }
 .lib-space.warn { --level: #d97706; }
 .lib-space.full { --level: var(--red); border-color: var(--red); }
@@ -2363,6 +2381,8 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .lib-thumb { position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; border: 0; overflow: hidden; background: #0b1020; }
 .lib-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s; }
 .lib-thumb:hover img { transform: scale(1.05); }
+.lib-thumb img.whole { position: relative; object-fit: contain; }
+.lib-backdrop { position: absolute; inset: -14px; background: center / cover no-repeat; filter: blur(12px) brightness(.55); }
 .lib-noimg { display: grid; place-items: center; height: 100%; font-size: 42px; }
 .lib-kind, .lib-state { position: absolute; top: 10px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #fff; }
 .lib-kind { left: 10px; background: #020618b3; }

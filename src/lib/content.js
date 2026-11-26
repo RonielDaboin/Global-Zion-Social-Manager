@@ -5,6 +5,7 @@ import { t } from './i18n.jsx'
 import { workspaceId } from './workspace.js'
 
 export const CONTENT_DAYS = 30
+const COVER_SECOND = 3 // segundo del video que se usa como portada
 export const CONTENT_MAX_MB = 50 // máximo por archivo del plan gratuito de Supabase
 export const STORAGE_LIMIT = 1024 * 1048576 // 1 GB del plan gratuito, compartido por todo el proyecto (cambiar si se sube de plan)
 export const CONTENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm'
@@ -81,19 +82,34 @@ const loadImageBlob = (blob) => new Promise((res, rej) => {
   im.src = url
 })
 
-/** Miniatura de un video; null si el navegador no puede leerlo (se sube igual). */
-const videoThumb = (blob) => new Promise((res) => {
-  const url = URL.createObjectURL(blob)
+/** Portada de un video (fotograma del segundo COVER_SECOND) desde un enlace; null si el navegador no puede leerlo. */
+const videoThumb = (src) => new Promise((res) => {
   const v = document.createElement('video')
   let timer
-  const end = (out) => { clearTimeout(timer); v.removeAttribute('src'); URL.revokeObjectURL(url); res(out) }
-  timer = setTimeout(() => end(null), 8000)
+  const end = (out) => { clearTimeout(timer); v.onloadedmetadata = v.onseeked = v.onerror = null; v.removeAttribute('src'); v.load(); res(out) }
+  timer = setTimeout(() => end(null), 20000)
+  v.crossOrigin = 'anonymous' // sin esto no se puede copiar el fotograma de un video guardado en la nube
   v.muted = true; v.playsInline = true; v.preload = 'auto'
-  v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2) }
+  // Con los metadatos basta para saltar al fotograma (si el video es más corto, se usa casi el final)
+  v.onloadedmetadata = () => { v.currentTime = Number.isFinite(v.duration) ? Math.min(COVER_SECOND, Math.max(0, v.duration - 0.1)) : COVER_SECOND }
   v.onseeked = () => { try { end(v.videoWidth ? drawScaled(v, v.videoWidth, v.videoHeight, 480, 0.72) : null) } catch { end(null) } }
   v.onerror = () => end(null)
-  v.src = url
+  v.src = src
 })
+
+const fileThumb = async (file) => {
+  const url = URL.createObjectURL(file)
+  try { return await videoThumb(url) } finally { URL.revokeObjectURL(url) }
+}
+
+/** Crea y guarda la portada de un video que no la tiene (lo lee desde la nube); null si no se pudo. */
+export async function createCover(item) {
+  const thumb = await videoThumb(await contentUrl(item))
+  if (!thumb) return null
+  const { error } = await supabase.from(TABLE).update({ thumb }).eq('id', item.id)
+  if (error) fail(error)
+  return thumb
+}
 
 export async function uploadContent(file) {
   if (!CONTENT_ACCEPT.split(',').includes(file.type)) throw new Error(t('Formato no admitido. Usa JPG, PNG, WEBP, GIF, MP4, MOV o WEBM.'))
@@ -101,7 +117,7 @@ export async function uploadContent(file) {
   const ws = await workspaceId()
   if (!ws) throw new Error(t('Inicia sesión para continuar'))
   let thumb
-  if (file.type.startsWith('video/')) thumb = await videoThumb(file)
+  if (file.type.startsWith('video/')) thumb = await fileThumb(file)
   else { const im = await loadImageBlob(file); thumb = drawScaled(im, im.naturalWidth, im.naturalHeight, 480, 0.72) }
   const id = crypto.randomUUID()
   const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || file.type.split('/')[1]).toLowerCase()

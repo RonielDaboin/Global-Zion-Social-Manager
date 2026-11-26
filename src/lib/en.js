@@ -1025,5 +1025,6 @@ const EN = {
   'No se pudo comprobar tu acceso': 'Could not check your access',
   'La cuenta {e} no tiene acceso. Por ahora la app solo la usan las personas autorizadas.': 'The account {e} does not have access. For now only authorized people use the app.',
   'Revisa tu conexión e inténtalo de nuevo.': 'Check your connection and try again.',
+  'Videos': 'Videos',
 }
 export default EN

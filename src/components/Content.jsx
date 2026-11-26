@@ -7,7 +7,7 @@ import { saveVideo } from '../lib/mediaStore.js'
 import { t, useLang, locale } from '../lib/i18n.jsx'
 import { Icon } from './ui.jsx'
 import {
-  CONTENT_ACCEPT, CONTENT_DAYS, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
+  CONTENT_ACCEPT, CONTENT_DAYS, createCover, CONTENT_MAX_MB, STORAGE_LIMIT, fetchStorageUsed, contentImage, contentUrl, daysLeft, deleteContent,
   downloadContentBlob, expiresAt, fetchContent, markContentPublished, uploadContent,
 } from '../lib/content.js'
 
@@ -18,6 +18,12 @@ const FILTERS = [
   ['all', 'Todo', () => true],
   ['pending', 'Sin publicar', (x) => !x.publishedAt],
   ['published', 'Publicado', (x) => !!x.publishedAt],
+]
+
+// Cada tipo tiene su bloque y su color
+const KINDS = [
+  { id: 'video', label: 'Videos', emoji: '🎬', test: (x) => x.isVideo },
+  { id: 'image', label: 'Imágenes', emoji: '🖼️', test: (x) => !x.isVideo },
 ]
 
 /** Formato de publicación que menos recorta una imagen con esas medidas. */
@@ -103,9 +109,10 @@ function ContentCard({ item, busy, onPreview, onUse, onDownload, onMark, onDelet
   const left = daysLeft(item)
   const urgent = left !== null && left <= 5
   return (
-    <article className="lib-card">
+    <article className={'lib-card ' + (item.isVideo ? 'is-video' : 'is-image')}>
       <button className="lib-thumb" onClick={onPreview} aria-label={t('Ver') + ' ' + item.name}>
-        {item.thumb ? <img src={item.thumb} alt="" loading="lazy" /> : <span className="lib-noimg">🎬</span>}
+        {item.thumb && item.isVideo && <span className="lib-backdrop" style={{ backgroundImage: `url(${item.thumb})` }} aria-hidden="true" />}
+        {item.thumb ? <img className={item.isVideo ? 'whole' : undefined} src={item.thumb} alt="" loading="lazy" /> : <span className="lib-noimg">🎬</span>}
         <span className="lib-kind">{item.isVideo ? '▶ ' + t('Video') : t('Imagen')}</span>
         <span className={'lib-state' + (item.publishedAt ? (urgent ? ' urgent' : ' pub') : '')}>
           {item.publishedAt ? (left === 1 ? t('Queda 1 día') : t('Quedan {n} días', { n: left })) : t('Sin publicar')}
@@ -137,6 +144,7 @@ export default function Content({ use }) {
   const [items, setItems] = useState(null) // null = cargando
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [kind, setKind] = useState('all') // 'all' | 'video' | 'image'
   const [uploading, setUploading] = useState(null) // {done, total, name}
   const [over, setOver] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -158,6 +166,27 @@ export default function Content({ use }) {
     if (count === undefined) return
     fetchStorageUsed().then((n) => alive.current && setTotal(n))
   }, [count])
+
+  // Crea de a una las portadas de video que falten (solo con la pestaña visible: en segundo plano el video no carga)
+  const covers = useRef({ busy: false, tried: new Set() })
+  const [coverTick, setCoverTick] = useState(0)
+  useEffect(() => {
+    const state = covers.current
+    const next = !state.busy && (items || []).find((x) => x.isVideo && !x.thumb && !state.tried.has(x.id))
+    if (!next) return undefined
+    if (document.hidden) {
+      const wake = () => setCoverTick((n) => n + 1)
+      document.addEventListener('visibilitychange', wake, { once: true })
+      return () => document.removeEventListener('visibilitychange', wake)
+    }
+    state.busy = true
+    state.tried.add(next.id) // si falla, se reintenta al volver a abrir la sección
+    createCover(next)
+      .then((thumb) => { if (thumb && alive.current) setItems((l) => l.map((x) => (x.id === next.id ? { ...x, thumb } : x))) })
+      .catch(() => {})
+      .finally(() => { state.busy = false; if (alive.current) setCoverTick((n) => n + 1) })
+    return undefined
+  }, [items, coverTick])
 
   const upload = async (fileList) => {
     const files = [...(fileList || [])]
@@ -228,7 +257,9 @@ export default function Content({ use }) {
     } catch (e) { notify(e.message, 'err') }
   }
 
-  const list = (items || []).filter(FILTERS.find((f) => f[0] === filter)[2])
+  const byKind = (items || []).filter((x) => kind === 'all' || KINDS.find((k) => k.id === kind).test(x))
+  const list = byKind.filter(FILTERS.find((f) => f[0] === filter)[2])
+  const groups = KINDS.map((k) => ({ ...k, list: list.filter(k.test) })).filter((g) => g.list.length)
 
   return (
     <div className="page lib">
@@ -264,25 +295,42 @@ export default function Content({ use }) {
       <p className="lib-note"><Icon name="clock" size={16} /> <span>{t('Cada archivo se conserva hasta que lo publiques. Después tiene {n} días de vigencia y se elimina solo para liberar memoria.', { n: CONTENT_DAYS })}</span></p>
 
       {!error && (
+        <div className="lib-kinds" role="group" aria-label={t('Tipo de contenido')}>
+          {[{ id: 'all', label: 'Todo', emoji: '📁', test: () => true }, ...KINDS].map((k) => (
+            <button key={k.id} type="button" className={'lib-kind-btn ' + k.id + (kind === k.id ? ' on' : '')} aria-pressed={kind === k.id} onClick={() => setKind(k.id)}>
+              <span aria-hidden="true">{k.emoji}</span> {t(k.label)} <b>{(items || []).filter(k.test).length}</b>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!error && (
         <div className="row between lib-bar-row">
           <div className="chips">{FILTERS.map(([id, label, test]) => (
-            <button key={id} className={'chip' + (filter === id ? ' on' : '')} onClick={() => setFilter(id)}>{t(label)} ({(items || []).filter(test).length})</button>
+            <button key={id} className={'chip' + (filter === id ? ' on' : '')} onClick={() => setFilter(id)}>{t(label)} ({byKind.filter(test).length})</button>
           ))}</div>
         </div>
       )}
 
       {items === null ? <div className="empty card">{t('Cargando…')}</div>
         : error ? null
-          : !list.length ? <div key={filter} className="empty card flt-in">{t('No hay contenido aquí todavía.')}</div>
-            : (
-              <div key={filter} className="lib-grid">
-                {list.map((item) => (
-                  <ContentCard key={item.id} item={item} busy={busyId === item.id}
-                    onPreview={() => setPreview(item)} onUse={() => !busyId && useItem(item)} onDownload={() => download(item)}
-                    onMark={() => setAsk({ type: 'mark', item })} onDelete={() => setAsk({ type: 'delete', item })} />
-                ))}
-              </div>
-            )}
+          : !list.length ? <div key={kind + filter} className="empty card flt-in">{t('No hay contenido aquí todavía.')}</div>
+            : groups.map((g) => (
+              <section key={g.id + filter} className={'lib-group ' + g.id} aria-labelledby={'lib-' + g.id}>
+                <header>
+                  <span className="lib-group-ico" aria-hidden="true">{g.emoji}</span>
+                  <h2 id={'lib-' + g.id}>{t(g.label)}</h2>
+                  <small>{g.list.length} · {fmtSize(g.list.reduce((n, x) => n + x.size, 0))}</small>
+                </header>
+                <div className="lib-grid">
+                  {g.list.map((item) => (
+                    <ContentCard key={item.id} item={item} busy={busyId === item.id}
+                      onPreview={() => setPreview(item)} onUse={() => !busyId && useItem(item)} onDownload={() => download(item)}
+                      onMark={() => setAsk({ type: 'mark', item })} onDelete={() => setAsk({ type: 'delete', item })} />
+                  ))}
+                </div>
+              </section>
+            ))}
 
       {preview && <Preview item={preview} onClose={() => setPreview(null)} />}
       {ask && (
