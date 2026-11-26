@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../lib/i18n.jsx'
 import { shrinkImage } from '../lib/social.js'
+import { useSpeech } from '../lib/useSpeech.js'
+
+const AUTO_SEND_KEY = 'gz_voice_autosend'
 
 // Pedidos de un toque
 const QUICK = [
@@ -75,8 +78,29 @@ export default function PostChat({ caption, disabled, busy, onSend, onSearch, on
       if (image) setRef(image)
     }
   }
+  // Pedir por voz: lo reconocido se escribe en el cuadro (después de lo que ya hubiera)
+  const [autoSend, setAutoSend] = useState(() => { try { return localStorage.getItem(AUTO_SEND_KEY) === '1' } catch { return false } })
+  const toggleAutoSend = (on) => { setAutoSend(on); try { localStorage.setItem(AUTO_SEND_KEY, on ? '1' : '0') } catch { /* ignore */ } }
+  const before = useRef('')
+  const withVoice = (heard) => [before.current, heard].filter(Boolean).join(' ').slice(0, 1200)
+  const voice = useSpeech({
+    onText: (heard) => setDraft(withVoice(heard)),
+    onDone: (heard) => {
+      const text = withVoice(heard)
+      setDraft(text)
+      if (autoSend && !off) { const image = ref; setDraft(''); setRef(null); send(text, image) }
+    },
+    onError: (message) => fail(new Error(message)),
+  })
+  const talk = () => {
+    if (voice.listening) return voice.stop()
+    before.current = draft.trim()
+    return voice.start()
+  }
+
   const submit = (e) => {
     e?.preventDefault()
+    voice.cancel() // al enviar a mano se deja de escuchar
     const text = draft.trim()
     if ((!text && !ref) || off) return
     const image = ref
@@ -121,15 +145,23 @@ export default function PostChat({ caption, disabled, busy, onSend, onSearch, on
         </div>
       )}
       <form className="post-chat-form" onSubmit={submit}>
-        <textarea rows={2} value={draft} maxLength={1200} disabled={busy} onChange={(e) => setDraft(e.target.value)}
+        <textarea rows={2} value={draft} maxLength={1200} disabled={busy} readOnly={voice.listening} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) submit(e) }}
           onPaste={(e) => { const f = [...e.clipboardData.files].find((x) => x.type.startsWith('image/')); if (f) { e.preventDefault(); attach(f) } }}
-          placeholder={t('Escribe tu pedido…')} aria-label={t('Asistente de la publicación')} />
+          placeholder={voice.listening ? t('Te escucho…') : t('Escribe tu pedido o pulsa «Hablar»…')} aria-label={t('Asistente de la publicación')} />
+        {voice.listening && (
+          <p className="voice-status" role="status"><i aria-hidden="true" /> {autoSend ? t('Escuchando… se envía cuando hagas una pausa.') : t('Escuchando… haz una pausa o pulsa «Detener».')}</p>
+        )}
         <div className="post-chat-tools">
+          <button type="button" className={'btn sm voice-btn' + (voice.listening ? ' on' : ' ghost')} disabled={off && !voice.listening} aria-pressed={voice.listening} onClick={talk}
+            title={t('Pide los cambios hablando. El navegador convierte tu voz en texto (Chrome y Edge usan sus servidores).')}>
+            {voice.listening ? '⏹ ' + t('Detener') : '🎤 ' + t('Hablar')}
+          </button>
           <button type="button" className="btn ghost sm" disabled={off} onClick={() => file.current?.click()}>📎 {t('Referencia')}</button>
           <button type="button" className="btn ghost sm" disabled={off || !draft.trim()} onClick={find} title={t('Busca fotos con las palabras que escribiste, sin usar la IA. En inglés hay más resultados.')}>🔎 {t('Buscar fotos')}</button>
           <button type="submit" className="btn primary sm" disabled={off || (!draft.trim() && !ref)}>{t('Enviar')}</button>
         </div>
+        {voice.supported && <label className="voice-auto"><input type="checkbox" checked={autoSend} onChange={(e) => toggleAutoSend(e.target.checked)} /> {t('Enviar al terminar de hablar')}</label>}
         <input ref={file} type="file" accept="image/*" hidden onChange={(e) => { attach(e.target.files?.[0]); e.target.value = '' }} />
       </form>
       <details className="post-chat-cap">

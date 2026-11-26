@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
@@ -9,7 +9,9 @@ import { refinePostAI } from '../lib/social.js'
 import { aiTextUsed, aiTextBump } from '../lib/plans.js'
 import { t, useLang } from '../lib/i18n.jsx'
 import PostChat from './PostChat.jsx'
+import { useSpeech } from '../lib/useSpeech.js'
 
+const AUTO_RUN_KEY = 'gz_voice_autogen'
 const SPIN = { borderColor: 'var(--line)', borderTopColor: 'var(--violet, #7c3aed)' }
 const preview = (design) => renderToDataURL(design, 'image/jpeg', 0.85, 560)
 
@@ -67,11 +69,33 @@ export default function AutoPost({ onClose, onGenerated }) {
   const [target, setTarget] = useState('b') // opción sobre la que el chat hace los cambios de diseño
   const connected = Object.keys(accounts).filter((id) => PLATFORMS[id])
 
-  const run = async () => {
+  // Dictar la idea: lo reconocido se escribe en el cuadro (después de lo que ya hubiera)
+  const [autoRun, setAutoRun] = useState(() => { try { return localStorage.getItem(AUTO_RUN_KEY) === '1' } catch { return false } })
+  const toggleAutoRun = (on) => { setAutoRun(on); try { localStorage.setItem(AUTO_RUN_KEY, on ? '1' : '0') } catch { /* ignore */ } }
+  const before = useRef('')
+  const withVoice = (heard) => [before.current, heard].filter(Boolean).join(' ')
+  const voice = useSpeech({
+    onText: (heard) => setText(withVoice(heard)),
+    onDone: (heard) => {
+      const idea = withVoice(heard)
+      setText(idea)
+      if (autoRun) run(idea)
+    },
+    onError: (message) => notify(message, 'err'),
+  })
+  const talk = () => {
+    if (voice.listening) return voice.stop()
+    before.current = text.trim()
+    return voice.start()
+  }
+
+  const run = async (spoken) => {
     if (busy) return
+    voice.cancel() // al generar se deja de escuchar
+    const idea = typeof spoken === 'string' ? spoken : text // desde el botón llega el evento del clic
     setBusy(true)
     try {
-      const r = await generateAutoPost({ text, platforms: connected.slice(0, 2), withImage, onStep: setStep })
+      const r = await generateAutoPost({ text: idea, platforms: connected.slice(0, 2), withImage, onStep: setStep })
       setStep(t('Preparando las opciones…'))
       const b0 = { id: 1, design: r.design, url: await preview(r.design) }
       const a0 = r.options.photo ? { id: 1, design: r.options.photo, url: await preview(r.options.photo) } : null
@@ -263,15 +287,25 @@ export default function AutoPost({ onClose, onGenerated }) {
       <div className="modal auto-post" onClick={(e) => e.stopPropagation()}>
         <h3>✨ {t('Crear con IA')}</h3>
         <p className="hint">{t('Escribe una idea (herramientas, páginas web, ciberseguridad, optimización de equipos…) o déjalo vacío. Se genera con la info de www.globalzion.cl.')}</p>
-        <textarea rows={3} autoFocus disabled={busy} value={text} onChange={(e) => setText(e.target.value)}
-          placeholder={t('Ej: Invítalos a entrar a www.globalzion.cl (opcional)')} />
+        <textarea rows={3} autoFocus disabled={busy} readOnly={voice.listening} value={text} onChange={(e) => setText(e.target.value)}
+          placeholder={voice.listening ? t('Te escucho…') : t('Ej: Invítalos a entrar a www.globalzion.cl (opcional)')} />
+        {voice.listening && (
+          <p className="voice-status" role="status"><i aria-hidden="true" /> {autoRun ? t('Escuchando… se genera cuando hagas una pausa.') : t('Escuchando… haz una pausa o pulsa «Detener».')}</p>
+        )}
+        {voice.supported && (
+          <label className="voice-auto"><input type="checkbox" checked={autoRun} disabled={busy} onChange={(e) => toggleAutoRun(e.target.checked)} /> {t('Generar al terminar de hablar')}</label>
+        )}
         <label className="inl" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="checkbox" checked={withImage} disabled={busy} onChange={(e) => setWithImage(e.target.checked)} />
           {t('Comparar también con un fondo de imagen de IA')}
         </label>
         {busy && <div className="auto-step"><span className="ws-spin" style={{ borderColor: 'var(--line)', borderTopColor: 'var(--violet, #7c3aed)' }} /> {step}</div>}
         {busy && <p className="hint">{withImage ? t('Con imagen de IA puede tardar 1–2 minutos. No cierres esta ventana.') : t('Puede tardar unos segundos. No cierres esta ventana.')}</p>}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row auto-foot">
+          <button type="button" className={'btn voice-btn' + (voice.listening ? ' on' : ' ghost')} disabled={busy} aria-pressed={voice.listening} onClick={talk}
+            title={t('Dicta tu idea. El navegador convierte tu voz en texto (Chrome y Edge usan sus servidores).')}>
+            {voice.listening ? '⏹ ' + t('Detener') : '🎤 ' + t('Hablar')}
+          </button>
           <button className="btn ghost" disabled={busy} onClick={onClose}>{t('Cancelar')}</button>
           <button className="btn primary" disabled={busy} onClick={run}>✨ {text.trim() ? t('Generar publicación') : t('Sorpréndeme')}</button>
         </div>

@@ -2317,6 +2317,18 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .post-chat-form textarea { width: 100%; min-width: 0; font-size: 16px; resize: vertical; }
 .post-chat-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .post-chat-tools .btn.primary { margin-left: auto; }
+/* Pedir por voz */
+.modal .btn.voice-btn.on, .modal .btn.voice-btn.on:hover, .post-chat-tools .btn.voice-btn.on, .post-chat-tools .btn.voice-btn.on:hover { border-color: #dc2626; color: #fff; background: #dc2626; animation: voicePulse 1.4s ease-in-out infinite; }
+@keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 #dc262699; } 50% { box-shadow: 0 0 0 7px #dc262600; } }
+.voice-status { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 12.5px; font-weight: 600; }
+.voice-status i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #dc2626; animation: voiceDot 1s ease-in-out infinite; }
+@keyframes voiceDot { 50% { opacity: .25; } }
+.voice-auto, .modal label.voice-auto, .post-chat label.voice-auto { display: flex; flex-direction: row; justify-content: flex-start; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.voice-auto input { flex: none; width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) { .modal .btn.voice-btn.on, .post-chat-tools .btn.voice-btn.on, .voice-status i { animation: none; } }
+.modal .row.auto-foot { justify-content: flex-end; }
+.auto-foot .voice-btn { margin-right: auto; }
+@media (max-width: 480px) { .auto-foot .voice-btn { flex: 1 1 100%; margin-right: 0; } .modal .row.auto-foot > .btn:not(.voice-btn) { flex: 1 1 auto; } }
 @media (max-width: 1000px) {
   .pick-work { grid-template-columns: minmax(0, 1fr); }
   .pick-side { position: static; }
