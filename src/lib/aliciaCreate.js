@@ -67,9 +67,11 @@ function readVideo(file, second) {
 }
 
 /** Publicación con un video de Contenido: baja el archivo, saca la portada y la IA escribe la ficha mirándolo. */
-async function createVideo({ id, topic, platforms, scheduledAt, content, onStep }) {
+async function createVideo({ topic, platforms, scheduledAt, content, onStep }) {
   onStep(t('Descargando el video…'))
-  const draft = await videoDraft(content, { id }) // el video queda guardado con el id de la publicación
+  // videoDraft guarda el archivo con el id que él genera: la publicación tiene que usar ese mismo
+  const draft = await videoDraft(content)
+  const { id } = draft
   try {
     const file = await loadVideo(id)
     if (!file) throw new Error(t('No se encontró el video guardado'))

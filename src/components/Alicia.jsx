@@ -255,7 +255,7 @@ export default function Alicia({ onEdit }) {
         savePost(post)
         postsRef.current = [post, ...postsRef.current] // para que el siguiente video no repita este
         aiTextBump(session.id)
-        patch(it.key, { postId: id })
+        patch(it.key, { postId: post.id })
         done++
       } catch (e) {
         patch(it.key, { error: e?.message || String(e) })
