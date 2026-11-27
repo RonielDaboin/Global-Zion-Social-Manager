@@ -18,6 +18,7 @@ import { Icon, PlatformBadge } from './ui.jsx'
 import { composeCaption, normalizeTags, initialSheet, sheetFromCaption, withContact, CONTACT_LENGTH } from '../lib/postSheet.js'
 import { planFor, aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { LockTag } from './Plans.jsx'
+import { editorBridge } from '../lib/aliciaHelp.js'
 
 const toLocalInput = (ts) => {
   const d = new Date(ts - new Date().getTimezoneOffset() * 60000)
@@ -229,6 +230,22 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
     show()
     genSheet().then(show)
   }, [videoFile]) // eslint-disable-line
+
+  // Alicia ve lo que hay en el editor y puede cambiar el texto, las redes y la fecha (ver lib/aliciaHelp.js)
+  const bridge = useRef({})
+  bridge.current = {
+    snapshot: () => ({ id, mediaType, hasMedia: isVideo ? !!videoFile : true, sheet, platforms, when, maxLen }),
+    image: async () => {
+      const url = isVideo ? video?.cover : await renderToDataURL(design, 'image/jpeg', 0.8, 768)
+      return url ? shrinkImage(url) : null
+    },
+    apply: (next) => { setSheet(next.sheet); setPlatforms(next.platforms); setWhen(next.when) },
+  }
+  useEffect(() => {
+    const api = Object.fromEntries(['snapshot', 'image', 'apply'].map((k) => [k, (...args) => bridge.current[k](...args)]))
+    editorBridge.current = api
+    return () => { if (editorBridge.current === api) editorBridge.current = null }
+  }, [])
 
   const editSheet = (patch) => setSheet((cur) => ({ ...cur, ...patch }))
   const copy = (text) => { navigator.clipboard?.writeText(text); notify(t('Texto copiado')) }

@@ -10,7 +10,7 @@ import { extractFrames } from './videoProcess.js'
 import { logAI, isLimitMsg } from './aiUsage.js'
 import { t, getLang } from './i18n.jsx'
 
-/** Pide el plan a la función `alicia`. Devuelve { action: 'plan' | 'chat', reply, items }. */
+/** Consulta a la función `alicia`. Devuelve { action: 'plan' | 'edit' | 'chat', reply, items, edits }. */
 export async function askAlicia(body) {
   const { data, error } = await invokeFn('alicia', { ...body, lang: getLang() }, 120000)
   if (error) {
@@ -19,7 +19,7 @@ export async function askAlicia(body) {
     logAI('gemini', 'Textos', isLimitMsg(msg) ? 'limit' : 'error')
     throw new Error(msg)
   }
-  if (!data?.reply && !data?.items?.length) throw new Error(data?.error || t('La IA no devolvió texto'))
+  if (!data?.reply && !data?.items?.length && !data?.edits?.length) throw new Error(data?.error || t('La IA no devolvió texto'))
   logAI('gemini', 'Textos')
   return data
 }

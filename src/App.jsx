@@ -108,7 +108,7 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="side">
-        <Logo />
+        <Logo onClick={() => go('dashboard')} />
         <PlanBadge access={access} onClick={() => go('profile')} className="side-plan" />
         <nav>
           {NAV.filter((n) => n.id !== 'credits' || access.role.id === 'owner').map((n) => (
@@ -133,7 +133,7 @@ export default function App() {
       </aside>
       <main className="main">
         <div className="mbar">
-          <div className="mbar-logo"><Logo /><PlanBadge access={access} onClick={() => go('profile')} /></div>
+          <div className="mbar-logo"><Logo onClick={() => go('dashboard')} /><PlanBadge access={access} onClick={() => go('profile')} /></div>
           <div className="mbar-act">
             <LangToggle />
             <ThemeToggle />
@@ -161,7 +161,7 @@ export default function App() {
         {page === 'profile' && <Profile onLogout={() => setAskOut(true)} />}
         <Footer />
       </main>
-      <Alicia key={session.id} onEdit={edit} />
+      <Alicia key={session.id} page={page} onEdit={edit} />
       <PlansModal />
       {askOut && (
         <div className="modal-bg" onClick={() => setAskOut(false)}>

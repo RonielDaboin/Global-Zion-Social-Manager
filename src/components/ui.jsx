@@ -37,12 +37,15 @@ export function PlatformLogo({ id, size = 22 }) {
   )
 }
 
-export function Logo({ big }) {
+/** Con `onClick` el logo es un botón (en la app lleva al Panel). */
+export function Logo({ big, onClick }) {
+  const Tag = onClick ? 'button' : 'div'
+  const action = onClick ? { type: 'button', onClick, title: t('Ir al Panel'), 'aria-label': 'Global Zion · ' + t('Ir al Panel') } : {}
   return (
-    <div className={big ? 'logo big' : 'logo'}>
+    <Tag className={'logo' + (big ? ' big' : '') + (onClick ? ' logo-link' : '')} {...action}>
       <span className="logo-badge"><img src="/logo.webp" alt="Global Zion" width={big ? 56 : 30} height={big ? 56 : 30} /></span>
       <div><b>GLOBAL ZION</b><small>SOCIAL MANAGER</small></div>
-    </div>
+    </Tag>
   )
 }
 

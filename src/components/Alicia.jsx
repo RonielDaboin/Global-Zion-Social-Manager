@@ -10,9 +10,12 @@ import { fetchContent } from '../lib/content.js'
 import { contentUse } from '../lib/contentDraft.js'
 import { ANGLES } from '../lib/brand.js'
 import { aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
+import { appContext, editorBridge, planEdit, editSavedPost, toWhen, EDITABLE } from '../lib/aliciaHelp.js'
+import { initialSheet } from '../lib/postSheet.js'
 import { useSpeech } from '../lib/useSpeech.js'
 import { t, useLang, getLang, locale } from '../lib/i18n.jsx'
 import { Icon, PlatformLogo, StatusTag } from './ui.jsx'
+import AiOrb from './AiOrb.jsx'
 
 const AUTO_SEND_KEY = 'gz_voice_autosend'
 const CINE_KEY = 'gz_alicia_cine'
@@ -22,6 +25,13 @@ const EXAMPLES = [
   ['🗓️', 'Una imagen cada día de la próxima semana, de lunes a viernes'],
   ['🛒', 'Mañana a las 10:00 una imagen sobre tiendas online'],
 ]
+// Atajos mientras se está en el editor
+const HELP = [
+  ['👀', 'Revisa lo que estoy creando'],
+  ['✍️', 'Mejora el texto'],
+  ['#️⃣', 'Ponme mejores hashtags'],
+]
+const FIELDS = [['title', 'Título'], ['description', 'Descripción'], ['tags', 'Tags']]
 const TOPICS = [...new Set(ANGLES.map((a) => a.title))]
 
 const PATHS = {
@@ -111,7 +121,41 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
   )
 }
 
-export default function Alicia({ onEdit }) {
+/** Un cambio propuesto por Alicia: se aplica solo cuando el usuario lo pulsa. */
+function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
+  const v = ed.values
+  const name = ed.target === 'editor' ? t('La publicación del editor') : post ? initialSheet(post.sheet, post.caption).title || post.caption.slice(0, 60) : t('Esta publicación ya no está.')
+  return (
+    <li className={'ali-item ali-change' + (ed.before ? ' done' : '')}>
+      <div className="ali-item-top">
+        <span className="ali-thumb" aria-hidden="true">{post?.image ? <img src={post.image} alt="" /> : '✏️'}</span>
+        <div className="ali-item-info">
+          <b>{name}</b>
+          {post && <StatusTag s={post.status} />}
+        </div>
+        <button type="button" className="icon-btn" disabled={busy} onClick={onRemove} title={t('Quitar')} aria-label={t('Quitar')}><Icon name="x" size={15} /></button>
+      </div>
+      <dl>
+        {FIELDS.filter(([k]) => v[k]).map(([k, label]) => <div key={k}><dt>{t(label)}</dt><dd>{v[k]}</dd></div>)}
+        {v.networks.length > 0 && <div><dt>{t('Redes')}</dt><dd>{v.networks.map((p) => PLATFORMS[p]?.name || p).join(', ')}</dd></div>}
+        {(v.date || v.time) && <div><dt>{t('Fecha')}</dt><dd>{[v.date, v.time].filter(Boolean).join(' · ')}</dd></div>}
+      </dl>
+      {ed.error && <p className="ali-warn">❌ {ed.error}</p>}
+      {ed.before ? (
+        <div className="ali-change-act">
+          <span className="ali-done">✅ {ed.inEditor ? t('Aplicado en el editor: revisa y guarda, programa o publica.') : t('Cambio guardado.')}</span>
+          <button type="button" className="btn ghost sm" disabled={busy} onClick={onUndo}>↩️ {t('Deshacer')}</button>
+        </div>
+      ) : (
+        <div className="ali-change-act">
+          <button type="button" className="btn primary sm" disabled={busy} onClick={onApply}>✨ {t('Aplicar cambios')}</button>
+        </div>
+      )}
+    </li>
+  )
+}
+
+export default function Alicia({ page, onEdit }) {
   const { session, posts, accounts, access, openPlans, savePost, notify } = useApp()
   useLang()
   const storeKey = `gz_alicia_${session.id}`
@@ -120,6 +164,7 @@ export default function Alicia({ onEdit }) {
   const toggleCine = (on) => { setCine(on); try { localStorage.setItem(CINE_KEY, on ? '1' : '0') } catch { /* ignore */ } }
   const [msgs, setMsgs] = useState(() => read(storeKey).msgs || []) // { who: 'me' | 'ai' | 'err', text }
   const [items, setItems] = useState(() => read(storeKey).items || [])
+  const [edits, setEdits] = useState(() => read(storeKey).edits || []) // cambios propuestos a publicaciones
   const [withPhoto, setWithPhoto] = useState(() => read(storeKey).withPhoto !== false)
   const [draft, setDraft] = useState('')
   const [thinking, setThinking] = useState(false)
@@ -131,8 +176,8 @@ export default function Alicia({ onEdit }) {
   const busy = thinking || !!progress
 
   useEffect(() => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ msgs: msgs.slice(-MAX_MESSAGES), items, withPhoto })) } catch { /* ignore */ }
-  }, [msgs, items, withPhoto, storeKey])
+    try { localStorage.setItem(storeKey, JSON.stringify({ msgs: msgs.slice(-MAX_MESSAGES), items, edits, withPhoto })) } catch { /* ignore */ }
+  }, [msgs, items, edits, withPhoto, storeKey])
   useEffect(() => () => { stop.current = 'unmounted' }, []) // al cerrar sesión no se sigue creando
   // Se deja arriba el último mensaje: así se lee la respuesta y debajo queda el plan
   useEffect(() => {
@@ -154,6 +199,12 @@ export default function Alicia({ onEdit }) {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = prev }
+  }, [open, cine])
+  // En pantallas anchas la app se corre a un lado para ver el editor junto a Alicia
+  useEffect(() => {
+    if (!open || cine) return undefined
+    document.body.classList.add('ali-docked')
+    return () => document.body.classList.remove('ali-docked')
   }, [open, cine])
   // Recargar a medias dejaría publicaciones sin crear
   useEffect(() => {
@@ -190,15 +241,25 @@ export default function Alicia({ onEdit }) {
       const made = items.length - pending.length
       const history = msgs.filter((m) => m.who !== 'err').slice(-8).map((m) => `${m.who === 'me' ? 'Usuario' : 'Alicia'}: ${m.text}`)
       if (made) history.push(`(Nota de la app: ya se crearon ${made} publicaciones. No puedes modificarlas; para eso está el botón «Ver y editar».)`)
+      const editor = editorBridge.current?.snapshot() || null
+      const picture = editor?.hasMedia ? await editorBridge.current.image().catch(() => null) : null
+      const { context, refs } = appContext({ page, posts: postsRef.current, accounts, editor })
       const r = await askAlicia({
+        context, image: picture,
         message, history, topics: TOPICS, freeVideos: free?.length || 0,
         calendar: calendarLines(new Date(), getLang()), now: new Date().toString().slice(0, 21),
         plan: pending.map(({ type, date, time, topic, asked }) => ({ type, date, time, topic, networks: asked || [] })),
       })
       aiTextBump(session.id)
       const clean = r.action === 'plan' ? cleanItems(r.items) : []
+      const proposed = (r.action === 'edit' ? r.edits || [] : []).map(({ target, ...values }) => ({
+        key: uid(), target: target === 'editor' ? (editor ? 'editor' : null) : refs[target], editorId: editor?.id,
+        values: { ...values, networks: values.networks || [] },
+      })).filter((e) => e.target)
+      if (r.action === 'edit' && !proposed.length) throw new Error(t('No supe qué publicación cambiar. Dime cuál es.'))
       if (r.action === 'plan' && !clean.length) throw new Error(t('No entendí las fechas. Dime los días de otra forma.'))
-      say('ai', r.reply || t('Este es el plan. Revísalo antes de crear las publicaciones.'))
+      say('ai', r.reply || (proposed.length ? t('Te propongo estos cambios. Revísalos antes de aplicarlos.') : t('Este es el plan. Revísalo antes de crear las publicaciones.')))
+      if (proposed.length) setEdits(proposed)
       if (!clean.length) return
       const taken = postsRef.current.filter((p) => p.status === 'scheduled').map((p) => p.scheduledAt)
       const planned = fillTimes(clean, taken).map(({ networks, ...it }) => ({
@@ -303,7 +364,58 @@ export default function Alicia({ onEdit }) {
     if (post?.status === 'draft' && at) savePost({ ...post, scheduledAt: at })
   }
 
-  const clear = () => { setMsgs([]); setItems([]); setDraft(''); setVideos(null) }
+  const markEdit = (key, value) => setEdits((l) => l.map((x) => (x.key === key ? { ...x, ...value } : x)))
+  /** El editor abierto, si es la publicación a la que apunta el cambio. */
+  const editorFor = (ed) => {
+    const live = editorBridge.current?.snapshot()
+    return live && live.id === (ed.target === 'editor' ? ed.editorId : ed.target) ? live : null
+  }
+  // Lo que el editor tiene a medio hacer de una publicación guardada se actualiza igual, para que no tape el cambio
+  const patchWip = (post) => {
+    const key = `gz_wip_${session.id}_${post.id}`
+    try {
+      const wip = JSON.parse(localStorage.getItem(key))
+      if (wip) localStorage.setItem(key, JSON.stringify({ ...wip, sheet: post.sheet, caption: post.caption, platforms: post.platforms, ...(post.scheduledAt ? { when: toWhen(post.scheduledAt) } : {}) }))
+    } catch { /* ignore */ }
+  }
+  const apply = (ed) => {
+    const live = editorFor(ed)
+    if (live) {
+      const r = planEdit({ sheet: live.sheet, platforms: live.platforms, when: live.when, mediaType: live.mediaType }, ed.values, access)
+      if (r.error) return markEdit(ed.key, { error: r.error })
+      editorBridge.current.apply(r.next)
+      markEdit(ed.key, { error: null, inEditor: true, before: { sheet: live.sheet, platforms: live.platforms, when: live.when } })
+      // En el teléfono el panel tapa el editor: se cierra para que se vea el cambio
+      if (window.matchMedia('(max-width: 600px)').matches) { setOpen(false); notify(t('Cambios aplicados en el editor ✨')) }
+      return undefined
+    }
+    if (ed.target === 'editor') return markEdit(ed.key, { error: t('Abre esa publicación en el editor para aplicar el cambio.') })
+    const post = postsRef.current.find((p) => p.id === ed.target)
+    if (!post) return markEdit(ed.key, { error: t('Esta publicación ya no está.') })
+    const r = editSavedPost(post, ed.values, { access, accounts, posts: postsRef.current })
+    if (r.error) return markEdit(ed.key, { error: r.error })
+    savePost(r.post)
+    patchWip(r.post)
+    const { sheet, caption, platforms, scheduledAt } = post
+    return markEdit(ed.key, { error: null, inEditor: false, before: { sheet: initialSheet(sheet, caption), caption, platforms, scheduledAt } })
+  }
+  const undo = (ed) => {
+    if (ed.inEditor) {
+      if (!editorFor(ed)) return markEdit(ed.key, { error: t('Abre esa publicación en el editor para deshacer el cambio.') })
+      editorBridge.current.apply(ed.before)
+    } else {
+      const post = postsRef.current.find((p) => p.id === ed.target)
+      if (!post || !EDITABLE.includes(post.status)) return markEdit(ed.key, { error: t('Esa publicación ya no se puede cambiar.') })
+      const old = { ...post, ...ed.before }
+      // Volver a una hora que ya pasó haría que se publicara al instante
+      if (old.status === 'scheduled' && !(old.scheduledAt > Date.now())) return markEdit(ed.key, { error: t('No se puede deshacer: la hora anterior ya pasó y se publicaría al instante.') })
+      savePost(old)
+      patchWip(old)
+    }
+    return markEdit(ed.key, { error: null, before: null })
+  }
+
+  const clear = () => { setMsgs([]); setItems([]); setEdits([]); setDraft(''); setVideos(null) }
 
   const launch = () => {
     if (!access.limits.autoPost) return openPlans(t('Alicia está disponible en el plan Premium.'))
@@ -313,22 +425,23 @@ export default function Alicia({ onEdit }) {
   if (!open) {
     return (
       <button type="button" className={'ali-fab' + (progress ? ' working' : '')} onClick={launch} aria-label={t('Abrir a Alicia, tu asistente')}>
-        <span aria-hidden="true">👩‍💼</span>
+        <AiOrb className="ali-fab-aiorb" busy={!!progress} />
         <b>{progress ? `${progress.n}/${progress.total}` : 'Alicia'}</b>
       </button>
     )
   }
 
   const created = items.length - pending.length
-  const empty = !msgs.length && !items.length
-  const status = progress ? t('Creando tus publicaciones…') : thinking ? t('Pensando…') : voice.listening ? t('Te escucho…') : t('Tu asistente de publicaciones')
+  const empty = !msgs.length && !items.length && !edits.length
+  const composing = page === 'composer'
+  const status = progress ? t('Creando tus publicaciones…') : thinking ? t('Pensando…') : voice.listening ? t('Te escucho…') : composing ? t('Viendo lo que estás creando 👀') : t('Tu asistente de publicaciones')
   const cineLabel = cine ? t('Salir del modo cine') : t('Modo cine')
   // El envoltorio existe siempre: al cambiar de modo la ventana no se vuelve a montar
   return (
     <div className={'ali-wrap' + (cine ? ' cine' : '')} onClick={(e) => { if (cine && e.target === e.currentTarget) toggleCine(false) }}>
       <section className="ali" role="dialog" aria-modal={cine} aria-label="Alicia">
         <header className="ali-head">
-          <span className={'ali-av' + (busy ? ' busy' : '')} aria-hidden="true">👩‍💼</span>
+          <AiOrb className="ali-av" orbit busy={busy} />
           <div className="ali-title">
             <b>Alicia</b>
             <small><i aria-hidden="true" /> <span>{status}</span></small>
@@ -342,7 +455,7 @@ export default function Alicia({ onEdit }) {
           <div className="ali-log" aria-live="polite">
             {empty && !thinking ? (
               <div className="ali-hero">
-                <span className="ali-hero-av" aria-hidden="true">👩‍💼</span>
+                <AiOrb className="ali-hero-av" orbit />
                 <h2>{t('¡Hola! Soy Alicia')} 👋</h2>
                 <p>{t('Dime qué publicaciones quieres y para qué días. Antes de crear nada te muestro el plan, y no programo nada sin tu confirmación.')}</p>
                 <div className="ali-examples">
@@ -353,17 +466,29 @@ export default function Alicia({ onEdit }) {
               </div>
             ) : msgs.map((m, i) => (
               <div key={i} className={'ali-row ' + m.who}>
-                {m.who !== 'me' && <span className="ali-mini" aria-hidden="true">👩‍💼</span>}
+                {m.who !== 'me' && <AiOrb className="ali-mini" />}
                 <p className={'ali-msg ' + m.who}>{m.text}</p>
               </div>
             ))}
             {thinking && (
               <div className="ali-row ai">
-                <span className="ali-mini" aria-hidden="true">👩‍💼</span>
+                <AiOrb className="ali-mini" busy />
                 <p className="ali-msg ai ali-typing" role="status" aria-label={t('Pensando…')}><i /><i /><i /></p>
               </div>
             )}
           </div>
+
+          {edits.length > 0 && (
+            <div className="ali-plan">
+              <span className="ali-plan-tag">{t('Cambios propuestos')} <em>{edits.length}</em></span>
+              <ul>
+                {edits.map((ed) => (
+                  <Change key={ed.key} ed={ed} post={ed.target === 'editor' ? null : posts.find((p) => p.id === ed.target)} busy={busy}
+                    onApply={() => apply(ed)} onUndo={() => undo(ed)} onRemove={() => setEdits((l) => l.filter((x) => x.key !== ed.key))} />
+                ))}
+              </ul>
+            </div>
+          )}
 
           {items.length > 0 && (
             <div className="ali-plan">
@@ -400,6 +525,11 @@ export default function Alicia({ onEdit }) {
         )}
 
         <form className="ali-form" onSubmit={(e) => { e.preventDefault(); send(draft) }}>
+          {composing && !progress && (
+            <div className="ali-help">
+              {HELP.map(([icon, x]) => <button key={x} type="button" disabled={busy} onClick={() => send(t(x))}><span aria-hidden="true">{icon}</span> {t(x)}</button>)}
+            </div>
+          )}
           {voice.listening && <p className="voice-status" role="status"><i aria-hidden="true" /> {autoSend ? t('Escuchando… se envía cuando hagas una pausa.') : t('Escuchando… haz una pausa o pulsa «Detener».')}</p>}
           <div className={'ali-input' + (voice.listening ? ' listening' : '')}>
             <textarea rows={cine ? 2 : 1} value={draft} maxLength={1200} disabled={busy} readOnly={voice.listening} onChange={(e) => setDraft(e.target.value)}
