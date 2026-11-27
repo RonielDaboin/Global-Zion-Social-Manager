@@ -10,6 +10,7 @@ import AutoVideo, { AutoChoice } from './AutoVideo.jsx'
 import EmojiButton from './EmojiPicker.jsx'
 import WhenPicker from './WhenPicker.jsx'
 import MusicStudio from './MusicStudio.jsx'
+import IgMusic from './IgMusic.jsx'
 import VideoEditor, { videoWarnings } from './VideoEditor.jsx'
 import { extractFrames } from '../lib/videoProcess.js'
 import { saveVideo, loadVideo, deleteVideo } from '../lib/mediaStore.js'
@@ -86,20 +87,21 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
   }, []) // eslint-disable-line
   const [video, setVideo] = useState(src.video || null)
   const [videoFile, setVideoFile] = useState(null)
+  const [igMusic, setIgMusic] = useState(src.igMusic || null) // pista del catálogo de Instagram para el Reel
   const [saveCopy, setSaveCopy] = useState(true) // descargar el video al ordenador al publicar/programar
   useEffect(() => { if (src.mediaType === 'video') loadVideo(src.id).then((b) => b && setVideoFile(b)) }, []) // eslint-disable-line
   // El archivo de video va a IndexedDB en cuanto se sube, para que también sobreviva a F5
   useEffect(() => { if (videoFile) saveVideo(id, videoFile).catch(() => {}) }, [videoFile, id])
 
   // Guardado automático del trabajo en curso (con pequeño retraso) + guardado final al salir o recargar
-  const snap = { id, contentId, sheet, editing, createdAt, design, caption, platforms, subject, recipients, when, tone, mediaType, video }
+  const snap = { id, contentId, sheet, editing, createdAt, design, caption, platforms, subject, recipients, when, tone, mediaType, video, igMusic }
   const snapRef = useRef(snap); snapRef.current = snap
   const stopped = useRef(false)
   const flush = () => { if (!stopped.current) wipWrite(wipKey, snapRef.current) }
   useEffect(() => {
     const tm = setTimeout(flush, 500)
     return () => clearTimeout(tm)
-  }, [design, platforms, subject, recipients, when, tone, mediaType, video, sheet]) // eslint-disable-line
+  }, [design, platforms, subject, recipients, when, tone, mediaType, video, sheet, igMusic]) // eslint-disable-line
   useEffect(() => {
     window.addEventListener('pagehide', flush)
     return () => { window.removeEventListener('pagehide', flush); flush() }
@@ -132,7 +134,7 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
   const build = async (status) => {
     const image = isVideo ? video.cover : await renderToDataURL(design)
     if (isVideo) await saveVideo(id, videoFile); else await deleteVideo(id)
-    return { id, contentId, sheet, caption, subject, recipients, platforms, mediaType, video: isVideo ? video : null, format: design.format, design, image, status, scheduledAt: status === 'scheduled' ? new Date(when).getTime() : null, createdAt: createdAt || Date.now() }
+    return { id, contentId, sheet, caption, subject, recipients, platforms, mediaType, video: isVideo ? video : null, igMusic: isVideo ? igMusic : null, format: design.format, design, image, status, scheduledAt: status === 'scheduled' ? new Date(when).getTime() : null, createdAt: createdAt || Date.now() }
   }
 
   const validate = (needPlatforms) => {
@@ -332,6 +334,10 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
             <label className="inl">{t('Destinatarios (correos o números, separados por coma)')}<input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="cliente@correo.com, +56 9 1234 5678" /></label>
           </div>
         )}
+        {isVideo && platforms.includes('instagram') && design.format !== 'ig-story' && (accounts.instagram?.real
+          ? <IgMusic value={igMusic} onChange={setIgMusic} notify={notify} />
+          : <p className="muted">🎵 {t('Conecta Instagram en Cuentas para poder usar su música.')}</p>)}
+        {isVideo && igMusic && platforms.some((p) => p !== 'instagram') && <p className="warn">⚠️ {t('La música de Instagram solo se agrega en Instagram: en las otras redes el video va sin ella.')}</p>}
         {isVideo && (
           <label className="save-copy">
             <input type="checkbox" checked={saveCopy} onChange={(e) => setSaveCopy(e.target.checked)} />

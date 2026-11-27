@@ -2514,3 +2514,30 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
   .av-actions .btn.primary { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { .ai-choice button { transition: none; } }
+
+/* Música de Instagram */
+.igm { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 12px; margin-top: 14px; min-width: 0; }
+.igm-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.igm-head > div { display: grid; gap: 2px; flex: 1 1 220px; }
+.igm-head small { color: var(--muted); font-size: 12.5px; }
+.igm-chosen, .igm-panel { display: grid; gap: 10px; min-width: 0; }
+.igm-row { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); min-width: 0; }
+.igm-row.on { border-color: var(--violet); }
+.igm-row .btn { flex: none; }
+.igm-play { position: relative; flex: none; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--line); color: #fff; }
+.igm-play img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.igm-play span { position: absolute; inset: 0; display: grid; place-items: center; background: #0006; font-size: 15px; }
+.igm-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.igm-title { font-size: 14px; }
+.igm-n { font-style: normal; font-size: 12px; color: var(--muted); min-width: 18px; text-align: center; flex: none; }
+.igm-info { flex: 1; min-width: 0; display: grid; }
+.igm-info b, .igm-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.igm-info small { color: var(--muted); font-size: 12px; }
+.igm-vols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.igm-vols label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.igm-vols input { padding: 0; }
+.igm-search { display: flex; gap: 8px; }
+.igm-search input { flex: 1; min-width: 0; }
+.igm-search .btn { flex: none; }
+.igm-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 480px) { .igm { padding: 10px; } .igm-row { gap: 8px; } .igm-n { display: none; } .igm-info b, .igm-info small { white-space: normal; overflow-wrap: anywhere; } }

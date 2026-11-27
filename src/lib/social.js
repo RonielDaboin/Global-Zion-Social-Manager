@@ -234,6 +234,8 @@ export async function publishPost(post, accounts, { onWaiting } = {}) {
           if (sent) { keep(fid, sent); continue }
         }
         const m = {}
+        const music = isVideo && p === 'instagram' && fid !== 'ig-story' ? post.igMusic : null
+        if (music) m.audio = { id: music.id, volume: music.volume, videoVolume: music.videoVolume }
         if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video', undefined, '', videoPaths)
         else if (post.image) m.imageUrl = await imageUrl(fid)
         let r

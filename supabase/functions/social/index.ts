@@ -22,6 +22,7 @@ class HttpError extends Error {
 }
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
+const GRAPH_AUDIO = 'https://graph.facebook.com/v22.0' // la API de audio de Instagram usa esta versión
 const env = (k: string) => Deno.env.get(k) || ''
 const META = { id: env('META_APP_ID'), secret: env('META_APP_SECRET') }
 // ID de la configuración de Facebook Login for Business (no es secreto)
@@ -223,7 +224,16 @@ async function tiktokToken(uid: string, a: Acc) {
 
 // ---- Publicación ----
 type Acc = { account_id: string; access_token: string; refresh_token: string | null; expires_at: string | null; extra: Record<string, string> }
-type Job = { caption?: string; imageUrl?: string; videoUrl?: string; mediaType?: string; subject?: string; recipients?: string; format?: string }
+type Job = { caption?: string; imageUrl?: string; videoUrl?: string; mediaType?: string; subject?: string; recipients?: string; format?: string; audio?: { id?: string; volume?: number; videoVolume?: number } }
+
+// ---- Música de Instagram (solo Reels) ----
+type Audio = { audio_id: string; title?: string; display_artist?: string; ig_username?: string; duration_in_ms?: number; cover_artwork_thumbnail_uri?: string; profile_picture_url?: string; download_url?: string }
+// En los sonidos originales no hay artista ni carátula: se usan la cuenta que lo creó y su foto
+const toTrack = (x: Audio) => ({
+  id: x.audio_id, title: x.title || '', artist: x.display_artist || (x.ig_username ? '@' + x.ig_username : ''),
+  duration: x.duration_in_ms || 0, cover: x.cover_artwork_thumbnail_uri || x.profile_picture_url || null, preview: x.download_url || null,
+})
+const level = (v: unknown) => Math.min(100, Math.max(1, Math.round(Number(v)) || 100))
 
 async function publishInstagram(a: Acc, j: Job) {
   const ig = a.account_id, tk = a.access_token
@@ -239,7 +249,9 @@ async function publishInstagram(a: Acc, j: Job) {
     if (j.format === 'ig-story') body.media_type = 'STORIES'
     else if (j.caption) body.caption = j.caption
   }
-  const c = await getJson(`${GRAPH}/${ig}/media`, { method: 'POST', headers: FORM, body: qs(body) })
+  const music = body.media_type === 'REELS' && j.audio?.id ? j.audio : null
+  if (music) body.audio_configuration = JSON.stringify({ audio_id: String(music.id), audio_volume: level(music.volume), video_volume: level(music.videoVolume) })
+  const c = await getJson(`${music ? GRAPH_AUDIO : GRAPH}/${ig}/media`, { method: 'POST', headers: FORM, body: qs(body) })
   for (let i = 0; i < 40; i++) { // espera a que Instagram procese el medio
     const s = await getJson(`${GRAPH}/${c.id}?` + qs({ fields: 'status_code', access_token: tk }))
     if (s.status_code === 'FINISHED') break
@@ -435,6 +447,23 @@ Deno.serve(async (req) => {
       const j = jobKey && await readJob(jobKey)
       if (!j) return json({ state: 'none' })
       return json({ state: j.state === 'running' && isStale(j.updated_at) ? 'stale' : j.state, result: j.result, error: j.error, at: new Date(j.updated_at).getTime() })
+    }
+    if (b.action === 'audio-search' || b.action === 'audio-info') {
+      const { data: a } = await admin.from('social_accounts').select('account_id,access_token').eq('user_id', uid).eq('platform', 'instagram').maybeSingle()
+      if (!a) throw new HttpError(400, 'Conecta tu cuenta de Instagram para usar su música')
+      const auth = { headers: { Authorization: `Bearer ${a.access_token}` } }
+      if (b.action === 'audio-info') {
+        const id = String(b.audioId || '')
+        if (!/^\d+$/.test(id)) throw new HttpError(400, 'Pista inválida')
+        const x = await getJson(`${GRAPH_AUDIO}/${id}?` + qs({ user_id: a.account_id }), auth)
+        return json({ track: toTrack({ ...x, audio_id: x.audio_id || id }) })
+      }
+      const q: Record<string, string> = { audio_type: b.kind === 'original_sound' ? 'original_sound' : 'music', user_id: a.account_id }
+      if (b.after) q.after = String(b.after).slice(0, 1000)
+      const text = String(b.query || '').trim().slice(0, 100)
+      if (text) q.search_query = text // sin texto devuelve las tendencias
+      const r = await getJson(`${GRAPH_AUDIO}/ig_audio?` + qs(q), auth)
+      return json({ tracks: ((r.audio || []) as Audio[]).map(toTrack), after: r.paging?.next ? r.paging?.cursors?.after || null : null })
     }
     if (b.action === 'verify') { // ¿está ya en el perfil? Solo cuenta el mismo texto y publicado después de crearla
       const { data: a } = await admin.from('social_accounts').select('account_id,access_token').eq('user_id', uid).eq('platform', 'instagram').maybeSingle()
