@@ -1217,5 +1217,13 @@ const EN = {
   'En tendencia ahora': 'Trending now',
   'Resultados de «{q}»': 'Results for “{q}”',
   'Los sonidos originales son de otros usuarios y pueden incluir música con derechos.': 'Original sounds belong to other users and may include copyrighted music.',
+  '⭐ Favoritos': '⭐ Favorites',
+  'Buscar en tus favoritos': 'Search your favorites',
+  'Quitar de favoritos': 'Remove from favorites',
+  'Guardar en favoritos': 'Save to favorites',
+  'Actualizado a las {h}': 'Updated at {h}',
+  'No se pudo guardar el favorito: {e}': 'The favorite could not be saved: {e}',
+  'No se pudieron cargar los favoritos: {e}': 'Favorites could not be loaded: {e}',
+  'Aún no tienes favoritos: toca la ☆ de una canción para guardarla.': 'No favorites yet: tap the ☆ on a song to save it.',
 }
 export default EN

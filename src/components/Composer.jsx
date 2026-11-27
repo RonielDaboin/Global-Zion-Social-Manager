@@ -339,13 +339,16 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
           : <p className="muted">🎵 {t('Conecta Instagram en Cuentas para poder usar su música.')}</p>)}
         {isVideo && igMusic && platforms.some((p) => p !== 'instagram') && <p className="warn">⚠️ {t('La música de Instagram solo se agrega en Instagram: en las otras redes el video va sin ella.')}</p>}
         {isVideo && (
-          <label className="save-copy">
-            <input type="checkbox" checked={saveCopy} onChange={(e) => setSaveCopy(e.target.checked)} />
+          <div className="save-copy">
             <span>
-              <b>💾 {t('Descargar una copia del video en mi computadora')}</b>
+              <b id="save-copy-title">💾 {t('Descargar una copia del video en mi computadora')}</b>
               <small>{t('Recomendado: para ahorrar espacio, el video se elimina de la nube cuando se publica. Si lo programas, se descarga ahora y se borra al publicarse.')}</small>
             </span>
-          </label>
+            <button type="button" className="lib-switch" role="switch" aria-checked={saveCopy} aria-labelledby="save-copy-title" onClick={() => setSaveCopy((v) => !v)}>
+              <span className="lib-switch-track" aria-hidden="true"><i /></span>
+              <span>{saveCopy ? t('Encendido') : t('Apagado')}</span>
+            </button>
+          </div>
         )}
         {!isVideo && platforms.includes('youtube') && <p className="warn">⚠️ {t('YouTube solo admite videos: cambia a Video o quita YouTube.')}</p>}
         {isVideo && videoWarnings(video, platforms).map((w, i) => <p key={i} className="warn">⚠️ {w}</p>)}
