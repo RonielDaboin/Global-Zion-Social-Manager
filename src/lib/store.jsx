@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
-import { publishPost, cleanupPostMedia, handleOAuthCallback, onOAuthResult, fetchSocial, socialCall } from './social.js'
+import { publishPost, cleanupPostMedia, handleOAuthCallback, onOAuthResult, fetchSocial, socialCall, mayBePublished, reconcilePost } from './social.js'
 import { uid } from './formats.js'
 import { t } from './i18n.jsx'
 import { supabase, toSession } from './supabase.js'
@@ -312,11 +312,16 @@ export function AppProvider({ children }) {
     }
     syncedRef.current[id] = '' // obliga a guardar el resultado final
     setPosts((l) => l.map((p) => (p.id === id ? { ...post, status: 'publishing' } : p)))
+    // La pantalla se mantiene encendida mientras se publica: si el teléfono se bloquea, se corta la conexión
+    const awake = await navigator.wakeLock?.request('screen').catch(() => null)
     let results
-    try { results = await publishPost(post, accountsRef.current) } catch (e) {
+    try {
+      results = await publishPost(post, accountsRef.current, { onWaiting: () => notify(t('Se cortó la conexión: comprobando en el servidor si se publicó…')) })
+    } catch (e) {
       // Un error inesperado no debe dejar la publicación "publicando…" para siempre
       results = Object.fromEntries((post.platforms || []).map((pl) => [pl, { ok: false, error: e?.message || String(e) }]))
     }
+    awake?.release().catch(() => {})
     const allOk = Object.values(results).every((r) => r.ok)
     if (allOk && post.mediaType === 'video') deleteVideo(id) // ya publicado: no se guarda el video (ni en la nube ni local); queda solo la captura (post.image)
     setPosts((l) => l.map((p) => (p.id === id
@@ -330,6 +335,34 @@ export function AppProvider({ children }) {
     if (allOk) notify(demo ? t('Publicado (modo demo: simulado)') : t('¡Publicado con éxito!'))
     else notify(t('Falló:') + ' ' + Object.entries(results).filter(([, r]) => !r.ok).map(([k, r]) => `${k}: ${r.error}`).join(', '), 'err')
   }, [notify, refresh])
+
+  // Publicaciones que quedaron como fallidas o «publicando…» por un corte de conexión: se pregunta qué pasó de verdad.
+  // Cada una se revisa una vez, y otra vez al volver a la app.
+  const checked = useRef(new Set())
+  const [checkRound, setCheckRound] = useState(0)
+  useEffect(() => {
+    const back = () => { if (!document.hidden) { checked.current.clear(); setCheckRound((n) => n + 1) } }
+    document.addEventListener('visibilitychange', back)
+    return () => document.removeEventListener('visibilitychange', back)
+  }, [])
+  useEffect(() => {
+    if (!cloudReady.current || !session || member !== 'ok') return
+    posts.filter((p) => mayBePublished(p) && !claiming.current.has(p.id) && !checked.current.has(p.id)).forEach(async (p) => {
+      checked.current.add(p.id)
+      const found = await reconcilePost(p).catch(() => null)
+      const now = postsRef.current.find((x) => x.id === p.id)
+      if (!found || !now || claiming.current.has(p.id) || now.status !== p.status) return
+      if (!found.allOk && p.status === 'publishing') return // puede seguir publicándose en otro dispositivo
+      setPosts((l) => l.map((x) => (x.id === p.id
+        ? { ...x, results: found.results, ...(found.allOk ? { status: 'published', publishedAt: found.publishedAt, publishedBy: x.publishedBy || x.author } : {}) }
+        : x)))
+      if (!found.allOk) return
+      if (p.mediaType === 'video') deleteVideo(p.id)
+      if (p.contentId) markContentPublished(p.contentId).catch(() => {})
+      sendAlert('published', p, found.results)
+      notify(t('Confirmado: la publicación sí se publicó'))
+    })
+  }, [posts, checkRound, session, member, notify])
 
   // Programador: revisa cada 15 s las publicaciones cuyo momento ya llegó (mientras la app esté abierta)
   useEffect(() => {

@@ -1188,5 +1188,10 @@ const EN = {
   'No se pudo descargar el archivo de Backblaze.': 'The file could not be downloaded from Backblaze.',
   '{u} de {l}': '{u} of {l}',
   'Lo nuevo se guarda en Backblaze hasta los {s}; después, en Supabase.': 'New files go to Backblaze up to {s}; after that, to Supabase.',
+  'El envío no llegó al servidor. Revisa tu conexión e inténtalo de nuevo.': 'The request never reached the server. Check your connection and try again.',
+  'Se perdió la conexión y no se pudo confirmar. Mira en la red si se publicó antes de reintentar.': 'The connection was lost and the result could not be confirmed. Check the network to see whether it was posted before retrying.',
+  'Se cortó la conexión: comprobando en el servidor si se publicó…': 'Connection lost: checking with the server whether it was posted…',
+  'Confirmado: la publicación sí se publicó': 'Confirmed: the post was published',
+  'La subida del archivo se quedó detenida. Revisa tu conexión e inténtalo de nuevo.': 'The file upload stalled. Check your connection and try again.',
 }
 export default EN

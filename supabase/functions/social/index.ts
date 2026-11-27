@@ -246,7 +246,17 @@ async function publishInstagram(a: Acc, j: Job) {
     if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') throw new HttpError(502, 'Instagram no pudo procesar el archivo')
     await new Promise((r) => setTimeout(r, 3000))
   }
-  const p = await getJson(`${GRAPH}/${ig}/media_publish`, { method: 'POST', headers: FORM, body: qs({ creation_id: c.id, access_token: tk }) })
+  let p: { id?: string }
+  try {
+    p = await getJson(`${GRAPH}/${ig}/media_publish`, { method: 'POST', headers: FORM, body: qs({ creation_id: c.id, access_token: tk }) })
+  } catch (e) {
+    // Instagram a veces responde con error aunque sí publicó: se confirma con el estado del envío
+    await new Promise((r) => setTimeout(r, 5000))
+    const s = await getJson(`${GRAPH}/${c.id}?` + qs({ fields: 'status_code', access_token: tk })).catch(() => null)
+    if (s?.status_code !== 'PUBLISHED') throw e
+    p = {}
+  }
+  if (!p.id) return { id: undefined, permalink: undefined }
   let permalink: string | undefined
   try { permalink = (await getJson(`${GRAPH}/${p.id}?` + qs({ fields: 'permalink', access_token: tk }))).permalink } catch { /* opcional */ }
   return { id: p.id, permalink }
@@ -350,6 +360,15 @@ async function publishEmail(uid: string, a: Acc, j: Job) {
   })
 }
 
+// ---- Registro de cada envío ----
+// El servidor termina de publicar aunque el navegador se desconecte; aquí queda el resultado para consultarlo.
+type JobKey = { workspace: string; post_id: string; platform: string; format: string }
+const STALE_JOB_MS = 3 * 60_000 // más que el tiempo máximo de la función: si sigue «running», se interrumpió
+const readJob = async (k: JobKey) => (await admin.from('publish_jobs').select('state,result,error,updated_at').match(k).maybeSingle()).data
+const writeJob = (k: JobKey, state: string, result: unknown = null, error: string | null = null) =>
+  admin.from('publish_jobs').upsert({ ...k, state, result, error, updated_at: new Date().toISOString() })
+const isStale = (at: string) => Date.now() - new Date(at).getTime() > STALE_JOB_MS
+
 // ---- Servidor ----
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -411,15 +430,42 @@ Deno.serve(async (req) => {
       pool.sort((x, y) => Math.abs(new Date(x.timestamp).getTime() - t0) - Math.abs(new Date(y.timestamp).getTime() - t0))
       return json({ permalink: pool[0]?.permalink || null })
     }
+    const jobKey: JobKey | null = b.postId ? { workspace: uid, post_id: String(b.postId), platform, format: String(b.format || '') } : null
+    if (b.action === 'publish-status') {
+      const j = jobKey && await readJob(jobKey)
+      if (!j) return json({ state: 'none' })
+      return json({ state: j.state === 'running' && isStale(j.updated_at) ? 'stale' : j.state, result: j.result, error: j.error, at: new Date(j.updated_at).getTime() })
+    }
+    if (b.action === 'verify') { // ¿está ya en el perfil? Solo cuenta el mismo texto y publicado después de crearla
+      const { data: a } = await admin.from('social_accounts').select('account_id,access_token').eq('user_id', uid).eq('platform', 'instagram').maybeSingle()
+      const cap = String(b.caption || '').trim(), since = Number(b.since) || 0
+      if (!a || !cap || !since) return json({ found: false })
+      const l = await getJson(`${GRAPH}/${a.account_id}/media?` + qs({ fields: 'id,permalink,caption,timestamp', limit: '50', access_token: a.access_token }))
+      const m = ((l.data || []) as { id: string; permalink: string; caption?: string; timestamp: string }[])
+        .find((x) => (x.caption || '').trim() === cap && new Date(x.timestamp).getTime() >= since - 120_000)
+      return json(m ? { found: true, id: m.id, permalink: m.permalink, at: new Date(m.timestamp).getTime() } : { found: false })
+    }
     if (b.action === 'publish') {
+      if (jobKey) { // un reintento de algo que sí salió (o que sigue en curso) no lo publica dos veces
+        const j = await readJob(jobKey)
+        if (j?.state === 'done') return json({ ok: true, result: j.result, repeated: true })
+        if (j?.state === 'running' && !isStale(j.updated_at)) return json({ pending: true })
+      }
       const { data: a } = await admin.from('social_accounts').select('*').eq('user_id', uid).eq('platform', platform).maybeSingle()
       if (!a) throw new HttpError(400, 'Cuenta no conectada')
+      if (jobKey) await writeJob(jobKey, 'running')
       let out
-      if (platform === 'instagram') out = await publishInstagram(a, b)
-      else if (platform === 'facebook') out = await publishFacebook(a, b)
-      else if (platform === 'email') out = await publishEmail(uid, a, b)
-      else if (platform === 'tiktok') out = await publishTikTok(uid, a, b)
-      else throw new HttpError(400, 'Red no soportada')
+      try {
+        if (platform === 'instagram') out = await publishInstagram(a, b)
+        else if (platform === 'facebook') out = await publishFacebook(a, b)
+        else if (platform === 'email') out = await publishEmail(uid, a, b)
+        else if (platform === 'tiktok') out = await publishTikTok(uid, a, b)
+        else throw new HttpError(400, 'Red no soportada')
+      } catch (e) {
+        if (jobKey) await writeJob(jobKey, 'error', null, (e as Error).message || 'Error')
+        throw e
+      }
+      if (jobKey) await writeJob(jobKey, 'done', out)
       return json({ ok: true, result: out })
     }
     throw new HttpError(400, 'Acción desconocida')

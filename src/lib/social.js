@@ -19,12 +19,94 @@ const env = import.meta.env
 export async function socialCall(action, body = {}) {
   const { data, error } = await supabase.functions.invoke('social', { body: { action, ...body } })
   if (error) {
-    let msg = error.message
-    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error } catch { /* ignore */ }
-    throw new Error(msg)
+    let msg = error.message, answered = false
+    try { const j = await error.context?.json?.(); if (j?.error) { msg = j.error; answered = true } } catch { /* ignore */ }
+    const e = new Error(msg)
+    e.network = !answered // se cortó la conexión: no se sabe qué hizo el servidor
+    throw e
   }
   if (data?.error) throw new Error(data.error)
   return data
+}
+
+// ---- Confirmar envíos cuando se pierde la conexión ----
+// En el teléfono una petición puede quedarse colgada sin dar error: ninguna espera es indefinida
+const UPLOAD_MS = 180000
+const PUBLISH_MS = 160000 // algo más que el tiempo máximo del servidor
+function withTimeout(promise, ms, message, network = false) {
+  let timer
+  const limit = new Promise((_, rej) => { timer = setTimeout(() => { const e = new Error(message); e.network = network; rej(e) }, ms) })
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer))
+}
+const NET_ERROR = /failed to send a request|relay error|non-2xx/i // fallos guardados antes de marcarse como `unconfirmed`
+const unsure = (r) => Boolean(r && !r.ok && (r.unconfirmed || NET_ERROR.test(r.error || '')))
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+const targetsFor = (post, platform) => (post.mediaType === 'video' || !post.design ? [post.format] : formatsFor(platform, designFormats(post.design)))
+const jobStatus = (post, platform, format) => withTimeout(socialCall('publish-status', { postId: post.id, platform, format }), 15000, 'timeout', true)
+
+/** Busca la publicación en el perfil de Instagram (las historias no aparecen en esa lista). */
+async function findOnProfile(post, platform, format) {
+  if (platform !== 'instagram' || format === 'ig-story' || !post.caption) return null
+  const v = await socialCall('verify', { caption: post.caption, since: post.createdAt }).catch(() => null)
+  return v?.found ? { id: v.id, permalink: v.permalink, at: v.at } : null
+}
+
+/** { id, permalink, at } si consta que ese envío salió; null si no se puede asegurar. */
+async function confirmSent(post, platform, format) {
+  const s = await jobStatus(post, platform, format).catch(() => null)
+  if (s?.state === 'done') return { ...s.result, at: s.at }
+  return findOnProfile(post, platform, format)
+}
+
+/** Espera el resultado de un envío que el servidor sigue procesando (hasta unos 4 minutos). */
+async function waitForResult(post, platform, format) {
+  let missing = 0
+  for (let i = 0; i < 60 && missing < 5; i++) {
+    await sleep(4000)
+    const s = await jobStatus(post, platform, format).catch(() => null)
+    if (!s) continue // todavía sin conexión
+    if (s.state === 'done') return { ...s.result, at: s.at }
+    if (s.state === 'error') throw new Error(s.error || 'Error')
+    if (s.state === 'stale') break
+    missing = s.state === 'none' ? missing + 1 : 0
+  }
+  const found = await findOnProfile(post, platform, format)
+  if (found) return found
+  const e = new Error(missing >= 5
+    ? t('El envío no llegó al servidor. Revisa tu conexión e inténtalo de nuevo.')
+    : t('Se perdió la conexión y no se pudo confirmar. Mira en la red si se publicó antes de reintentar.'))
+  e.unconfirmed = true
+  throw e
+}
+
+const needsCheck = (r) => !r || unsure(r)
+/** Publicaciones que pueden haber salido aunque figuren como fallidas o «publicando…» */
+export const mayBePublished = (post) => (post.status === 'failed' || post.status === 'publishing')
+  && (!post.results || Object.values(post.results).some(unsure))
+
+/** Comprueba en el servidor qué pasó. Devuelve { results, allOk, publishedAt } o null si no hay novedades. */
+export async function reconcilePost(post) {
+  const results = { ...(post.results || {}) }
+  let changed = false, publishedAt = 0
+  for (const p of post.platforms || []) {
+    const prev = results[p]
+    if (prev?.ok || (post.status === 'failed' && post.results && !needsCheck(prev))) continue
+    const targets = targetsFor(post, p)
+    const done = [...(prev?.done || [])]
+    let main = null
+    for (const fid of targets) {
+      if (done.includes(fid)) continue
+      const r = await confirmSent(post, p, fid)
+      if (!r) continue
+      done.push(fid); changed = true; publishedAt = Math.max(publishedAt, r.at || 0)
+      if (!main || fid !== 'ig-story') main = { permalink: r.permalink, mediaId: r.id }
+    }
+    if (targets.every((f) => done.includes(f))) results[p] = { ok: true, done, permalink: prev?.permalink, mediaId: prev?.mediaId, ...main }
+    else if (prev) results[p] = { ...prev, done, ...main }
+  }
+  if (!changed) return null
+  const allOk = (post.platforms || []).every((p) => results[p]?.ok)
+  return { results, allOk, publishedAt: publishedAt || Date.now() }
 }
 
 /** { configured: {instagram, facebook, email}, accounts: [...] } o null si el servidor no responde. */
@@ -107,13 +189,15 @@ async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) 
   const path = `${ws}/${post.id}${tag}-${Date.now()}.${ext}`
   // El video se envía como bytes: como Blob, Safari en iPhone puede subirlo vacío
   const body = kind === 'video' ? await videoBytes(blob) : blob
-  const { error } = await supabase.storage.from('post-media').upload(path, body, { contentType: blob.type || (kind === 'video' ? 'video/mp4' : 'image/jpeg'), upsert: true })
+  const { error } = await withTimeout(
+    supabase.storage.from('post-media').upload(path, body, { contentType: blob.type || (kind === 'video' ? 'video/mp4' : 'image/jpeg'), upsert: true }),
+    UPLOAD_MS, t('La subida del archivo se quedó detenida. Revisa tu conexión e inténtalo de nuevo.'))
   if (error) throw new Error(/exceeded the maximum/i.test(error.message) ? t('El video pesa demasiado para subirlo (máximo 50 MB). Recórtalo en el editor o comprímelo.') : error.message)
   sink?.push(path)
   return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
 }
 
-export async function publishPost(post, accounts) {
+export async function publishPost(post, accounts, { onWaiting } = {}) {
   const results = {}
   const media = {} // se sube una sola vez por publicación (video) o por formato (imagen)
   const isVideo = post.mediaType === 'video'
@@ -136,24 +220,42 @@ export async function publishPost(post, accounts) {
     const targets = isVideo ? [post.format] : formatsFor(p, fmts)
     const done = [...(post.results?.[p]?.done || [])] // formatos ya publicados en un intento anterior: no se repiten
     const errors = []
-    let main = null
+    let main = null, unconfirmed = false
+    const keep = (fid, r) => {
+      done.push(fid)
+      if (!main || fid !== 'ig-story') main = { permalink: r?.permalink, mediaId: r?.id } // el enlace/ID que se guarda es el del post, no el de la story
+    }
     for (const fid of targets) {
       if (done.includes(fid)) continue
       try {
+        // Si el intento anterior quedó sin confirmar, primero se mira si en realidad salió
+        if (unsure(post.results?.[p])) {
+          const sent = await confirmSent(post, p, fid)
+          if (sent) { keep(fid, sent); continue }
+        }
         const m = {}
         if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video', undefined, '', videoPaths)
         else if (post.image) m.imageUrl = await imageUrl(fid)
-        const r = await socialCall('publish', {
-          platform: p, caption: post.caption, subject: post.subject, recipients: post.recipients,
-          mediaType: post.mediaType || 'photo', format: fid, ...m,
-        })
-        done.push(fid)
-        if (!main || fid !== 'ig-story') main = { permalink: r?.result?.permalink, mediaId: r?.result?.id } // el enlace/ID que se guarda es el del post, no el de la story
+        let r
+        try {
+          r = await withTimeout(socialCall('publish', {
+            platform: p, postId: post.id, caption: post.caption, subject: post.subject, recipients: post.recipients,
+            mediaType: post.mediaType || 'photo', format: fid, ...m,
+          }), PUBLISH_MS, 'timeout', true)
+        } catch (e) {
+          if (!e.network) throw e
+          r = { pending: true }
+        }
+        if (r?.pending) {
+          onWaiting?.()
+          keep(fid, await waitForResult(post, p, fid))
+        } else keep(fid, r?.result)
       } catch (e) {
+        if (e.unconfirmed || e.network) unconfirmed = true
         errors.push(targets.length > 1 ? `${getFormat(fid).short}: ${e.message}` : e.message)
       }
     }
-    results[p] = errors.length ? { ok: false, error: errors.join(' · '), done, ...main } : { ok: true, done, ...main }
+    results[p] = errors.length ? { ok: false, error: errors.join(' · '), done, unconfirmed, ...main } : { ok: true, done, ...main }
   }
   // Facebook descarga el video de forma asíncrona: si va en la publicación, se deja para la limpieza posterior
   if (videoPaths.length && !post.platforms.includes('facebook')) await supabase.storage.from('post-media').remove(videoPaths).catch(() => {})
