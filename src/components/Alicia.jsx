@@ -164,9 +164,7 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
           {it.type === 'video' && videos && (videos.length
             ? <VideoPick videos={videos} value={it.contentId} disabled={busy} onChange={(contentId) => onChange({ contentId })} />
             : <p className="ali-warn">⚠️ {t('No hay videos libres. Sube uno en la sección Contenido.')}</p>)}
-          {it.type === 'video' && (
-            <label className="ali-check"><input type="checkbox" checked={!!it.music} disabled={busy} onChange={(e) => onChange({ music: e.target.checked })} /> 🎵 {t('Con música de Instagram')}</label>
-          )}
+          <label className="ali-check"><input type="checkbox" checked={!!it.music} disabled={busy} onChange={(e) => onChange({ music: e.target.checked })} /> 🎵 {it.type === 'video' ? t('Con música de Instagram') : t('Con música: en Instagram sale como Reel')}</label>
         </>
       )}
       {post?.igMusic && <p className="ali-song">🎵 {[post.igMusic.title, post.igMusic.artist].filter(Boolean).join(' · ')}</p>}
@@ -414,10 +412,10 @@ export default function Alicia({ page, onEdit }) {
         }
         // La música se elige antes de crear: si no se puede poner, no se gasta nada ni se publica sin ella
         let igMusic = null
-        if (it.type === 'video' && it.music) {
+        if (it.music) {
           if (!it.platforms.includes('instagram') || !accounts.instagram?.real) throw new Error(t('La música solo se puede poner en Reels con Instagram conectado.'))
           onStep(t('Eligiendo la música…'))
-          igMusic = await pickIgMusic(it.musicQuery)
+          igMusic = await pickIgMusic(it.musicQuery, { photo: it.type === 'image' })
         }
         const id = uid()
         const made = await createPost({ type: it.type, id, topic: it.topic, platforms: it.platforms, scheduledAt: slotTime(it.date, it.time), content, withPhoto, onStep })

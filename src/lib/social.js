@@ -9,6 +9,7 @@ import { t, getLang } from './i18n.jsx'
 import { loadVideo, videoBytes } from './mediaStore.js'
 import { designFormats, formatsFor, getFormat } from './formats.js'
 import { renderToDataURL } from './render.js'
+import { makePhotoReel } from './photoReel.js'
 import { supabase } from './supabase.js'
 import { workspaceId } from './workspace.js'
 import { logAI, isLimitMsg } from './aiUsage.js'
@@ -179,7 +180,7 @@ async function uploadMedia(post, kind, src = post.image, tag = '', sink = null) 
   if (!ws) throw new Error(t('Inicia sesión para continuar'))
   let blob, ext
   if (kind === 'video') {
-    blob = await loadVideo(post.id)
+    blob = src instanceof Blob ? src : await loadVideo(post.id) // `src` Blob: el Reel hecho desde una foto
     if (!blob) throw new Error(t('No se encontró el video guardado'))
     ext = ((blob.type || 'video/mp4').split('/')[1] || 'mp4').replace('quicktime', 'mov')
   } else {
@@ -209,6 +210,13 @@ export async function publishPost(post, accounts, { onWaiting } = {}) {
     const src = fid === post.format || !post.design ? post.image : await renderToDataURL({ ...post.design, format: fid })
     return (media[fid] = await uploadMedia(post, 'image', src, '-' + fid))
   }
+  // Foto con música: Instagram solo admite música en Reels, así que ahí la imagen sale convertida en video
+  const reelUrl = async (fid) => {
+    const key = 'reel-' + fid
+    if (media[key]) return media[key]
+    const src = post.design ? await renderToDataURL({ ...post.design, format: fid }, 'image/jpeg', 0.95, 1080) : post.image
+    return (media[key] = await uploadMedia(post, 'video', await makePhotoReel(src), '-' + key, videoPaths))
+  }
   for (const p of post.platforms) {
     const acc = accounts[p]
     if (!acc) { results[p] = { ok: false, error: t('Cuenta no conectada') }; continue }
@@ -234,15 +242,17 @@ export async function publishPost(post, accounts, { onWaiting } = {}) {
           if (sent) { keep(fid, sent); continue }
         }
         const m = {}
-        const music = isVideo && p === 'instagram' && fid !== 'ig-story' ? post.igMusic : null
+        const music = p === 'instagram' && fid !== 'ig-story' ? post.igMusic : null
+        const reel = !isVideo && !!music && !!post.image
         if (music) m.audio = { id: music.id, volume: music.volume, videoVolume: music.videoVolume }
         if (isVideo) m.videoUrl = media.video ||= await uploadMedia(post, 'video', undefined, '', videoPaths)
+        else if (reel) m.videoUrl = await reelUrl(fid)
         else if (post.image) m.imageUrl = await imageUrl(fid)
         let r
         try {
           r = await withTimeout(socialCall('publish', {
             platform: p, postId: post.id, caption: post.caption, subject: post.subject, recipients: post.recipients,
-            mediaType: post.mediaType || 'photo', format: fid, ...m,
+            mediaType: reel ? 'video' : post.mediaType || 'photo', format: fid, ...m,
           }), PUBLISH_MS, 'timeout', true)
         } catch (e) {
           if (!e.network) throw e

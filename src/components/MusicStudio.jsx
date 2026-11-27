@@ -12,6 +12,7 @@ const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(
 
 /** Convierte la imagen diseñada en un video con música y movimiento. Entrega el resultado a `onCreated(file, meta)`. */
 export default function MusicStudio({ design, lim, onLocked, onCreated, notify, maxMB }) {
+  const [open, setOpen] = useState(false) // la sección empieza plegada para no ocupar el editor
   const [audio, setAudio] = useState(null)
   const [aDur, setADur] = useState(0)
   const [motion, setMotion] = useState('zoomin')
@@ -139,10 +140,23 @@ export default function MusicStudio({ design, lim, onLocked, onCreated, notify, 
     setMode(null); setProg(0)
   }
 
+  // Al plegar se corta la vista previa (suena); una grabación en curso sigue
+  const toggleOpen = () => { if (open && mode === 'preview') ctl.current.cancel = true; setOpen(!open) }
+
   const body = (
     <div className={cine ? 'editor cine ms-cine' + (cineLight ? ' cine-light' : '') : 'ms-wrap'}>
       {cine && <div className="cine-bar"><b>🎬 {t('Modo cine')} · {t('Animación')}</b><span className="hint">{t('Los cambios se ven en vivo · Esc para salir')}</span><CineThemeSwitch light={cineLight} onToggle={toggleCineTheme} /><button className="btn sm" onClick={() => setCine(false)}>✕ {t('Salir')}</button></div>}
-      {!cine && <h3 className="sub">🎞️ {t('Animación')} <em className="ms-opt">{t('(opcional)')}</em></h3>}
+      {!cine && (
+        <button type="button" className="ms-toggle" aria-expanded={open} onClick={toggleOpen}>
+          <span className="ms-toggle-ico" aria-hidden="true">🎞️</span>
+          <span className="ms-toggle-txt">
+            <b>{t('Animación')} <em className="ms-opt">{t('(opcional)')}</em></b>
+            <small>{mode === 'render' ? `⏳ ${Math.round(prog * 100)}%` : audio ? '🎧 ' + audio.name : t('Anima tu imagen y ponle tu música')}</small>
+          </span>
+          <span className="ms-toggle-act">{open ? t('Ocultar') : t('Ver')} <i aria-hidden="true" /></span>
+        </button>
+      )}
+      <div className="ms-content" hidden={!open && !cine}>
       {!cine && <p className="muted small">{t('Anima tu imagen y ponle música: elige el movimiento y el visualizador de barras. Usa solo música de tu propiedad o libre de derechos.')}</p>}
       {allowed && !lim.animAllMotions && <p className="hint ms-plan" style={{ textAlign: 'left', justifyContent: 'flex-start' }}>🔒 {t('Tu plan incluye 6 movimientos y hasta {n} s. Todos los movimientos y hasta 60 s están en Premium.', { n: lim.animMaxSec })}</p>}
       {!supported && <p className="warn">⚠️ {t('Este navegador no puede crear videos. Prueba con Chrome o Edge.')}</p>}
@@ -200,6 +214,7 @@ export default function MusicStudio({ design, lim, onLocked, onCreated, notify, 
           </div>
           {mode === 'render' && <><div className="ms-bar"><i style={{ width: prog * 100 + '%' }} /></div><p className="muted small">{t('Se graba en tiempo real: no cambies de pestaña hasta que termine.')}</p></>}
         </div>
+      </div>
       </div>
     </div>
   )

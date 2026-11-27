@@ -12,7 +12,7 @@ const FRESH_MS = 10 * 60000 // pasado este tiempo, la lista abierta se vuelve a 
 const plain = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 const length = (ms) => (ms ? `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}` : '')
 
-export default function IgMusic({ value, onChange, notify }) {
+export default function IgMusic({ value, onChange, notify, photo = false }) {
   useLang()
   const [open, setOpen] = useState(!value)
   const [kind, setKind] = useState('music')
@@ -129,7 +129,7 @@ export default function IgMusic({ value, onChange, notify }) {
   const tracks = isFavTab ? favs?.filter((x) => plain(x.title + ' ' + x.artist).includes(plain(query.trim()))) : list?.tracks
   const choose = (x) => {
     stop()
-    onChange({ id: x.id, title: x.title, artist: x.artist, cover: x.cover, duration: x.duration, kind: x.kind || (kind === 'fav' ? 'music' : kind), volume: value?.volume ?? 80, videoVolume: value?.videoVolume ?? 100 })
+    onChange({ id: x.id, title: x.title, artist: x.artist, cover: x.cover, duration: x.duration, kind: x.kind || (kind === 'fav' ? 'music' : kind), volume: value?.volume ?? (photo ? 100 : 80), videoVolume: value?.videoVolume ?? (photo ? 1 : 100) })
     setOpen(false)
   }
   // La carátula es el botón para escuchar, como en Instagram
@@ -162,13 +162,13 @@ export default function IgMusic({ value, onChange, notify }) {
             <button type="button" className="btn danger sm" onClick={() => { stop(); onChange(null) }}>{t('Quitar')}</button>
           </div>
           <div className="igm-vols">
-            {[['volume', 'Volumen de la música'], ['videoVolume', 'Volumen de tu video']].map(([key, label]) => (
+            {[['volume', 'Volumen de la música'], ['videoVolume', 'Volumen de tu video']].filter(([key]) => !photo || key === 'volume').map(([key, label]) => (
               <label key={key}>{t(label)}: {value[key]}%
                 <input type="range" min="1" max="100" value={value[key]} onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })} />
               </label>
             ))}
           </div>
-          <small className="muted">{t('Si tu video ya tiene música con derechos, baja su volumen al mínimo.')}</small>
+          {!photo && <small className="muted">{t('Si tu video ya tiene música con derechos, baja su volumen al mínimo.')}</small>}
         </div>
       )}
 

@@ -24,7 +24,7 @@ export function PostCard({ p, edit }) {
           <StatusTag s={p.status} />
         </div>
         <p className="cap">{p.caption || <i className="muted">{t('Sin texto')}</i>}</p>
-        {p.mediaType === 'video' && p.igMusic && p.platforms.includes('instagram') && <small className="muted">🎵 {p.igMusic.title}{p.igMusic.artist ? ` · ${p.igMusic.artist}` : ''}</small>}
+        {p.igMusic && p.platforms.includes('instagram') && <small className="muted">🎵 {p.mediaType !== 'video' && 'Reel · '}{p.igMusic.title}{p.igMusic.artist ? ` · ${p.igMusic.artist}` : ''}</small>}
         <small className="muted">
           {p.status === 'scheduled' && <>📅 {fmtDate(p.scheduledAt)}</>}
           {p.status === 'published' && <>✅ {fmtDate(p.publishedAt)}</>}

@@ -25,13 +25,13 @@ export async function askAlicia(body) {
 }
 
 /** Elige una pista del catálogo de Instagram: la mejor para `query`, o una de las primeras en tendencia. */
-export async function pickIgMusic(query = '') {
+export async function pickIgMusic(query = '', { photo = false } = {}) {
   const search = async (text) => (await socialCall('audio-search', { kind: 'music', query: text })).tracks || []
   const found = query ? await search(query) : []
   const tracks = found.length ? found : await search('')
   if (!tracks.length) throw new Error(t('No se encontró música con esa búsqueda.'))
   const x = tracks[found.length ? 0 : Math.floor(Math.random() * Math.min(8, tracks.length))]
-  return { id: x.id, title: x.title, artist: x.artist, cover: x.cover, duration: x.duration, kind: 'music', volume: 80, videoVolume: 100 }
+  return { id: x.id, title: x.title, artist: x.artist, cover: x.cover, duration: x.duration, kind: 'music', volume: photo ? 100 : 80, videoVolume: photo ? 1 : 100 }
 }
 
 const clip = (text, max) => (text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text)

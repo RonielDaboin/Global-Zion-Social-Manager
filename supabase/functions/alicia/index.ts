@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
     `REGLAS:`,
     auto ? `- MODO AUTORITARIO ACTIVO: el usuario quiere que se haga todo sin preguntarle. No pidas confirmación ni datos: completa tú lo que falte (hora, tema, redes) con lo más razonable. Usa "chat" solo para preguntas, saludos o cosas imposibles. En "reply" di en una frase lo que vas a hacer (la app avisa cuando termine; no digas que ya está hecho) y no menciones botones.` : '',
     `- "publish": "now" SOLO si el pedido dice claramente publicar de inmediato (ya, ahora, al tiro); "draft" si pide solo crear, dejar en borrador o no programar; en cualquier otro caso "schedule". Con "now", usa la fecha de hoy y la hora actual.`,
-    `- "music": true solo en videos y solo si pide música. "musicQuery": canción, artista o estilo que pida; si no especifica, "". A las imágenes no se les puede poner música desde aquí: si la piden, dilo en "reply".`,
+    `- "music": true solo si pide música (vale para videos e imágenes). "musicQuery": canción, artista o estilo que pida; si no especifica, "". Una imagen con música sale en Instagram como un Reel de 15 segundos (Instagram no permite música en posts de foto desde una app): avísalo en "reply" en pocas palabras.`,
     `- "action": "plan" si el pedido crea publicaciones nuevas o cambia el plan sin crear; "edit" si pide cambiar la publicación del editor o una ya guardada; "chat" si es una pregunta, una revisión, un consejo, un saludo, algo que no puedes hacer o falta un dato imprescindible (pregunta en "reply"). "items" va vacío salvo con "plan", y "edits" vacío salvo con "edit".`,
     `- Con "edit", "edits" lleva un elemento por publicación (máximo ${MAX_ITEMS}). "target": "editor" para la del editor, o la "ref" de una guardada (solo con status draft, scheduled o failed). Si no queda claro cuál, usa la del editor si existe; si no, pregunta con "chat". Rellena SOLO los campos que cambian; los demás van como "" (o lista vacía). "description" es el texto completo nuevo, con sus saltos de línea, emojis acordes y las líneas de WhatsApp y web que ya tenga. "tags" son hashtags separados por espacios. Respeta el límite de caracteres ("maxLen") y no inventes ofertas, precios ni datos.`,
     `- No puedes cambiar la imagen ni el video, ni publicar, programar o borrar: explica qué botón usar. Al revisar, di en concreto qué está bien y qué mejorarías (texto, ortografía, hashtags, redes, hora, imagen) y avisa de lo que falte (cuentas sin conectar, texto vacío o demasiado largo). Si una publicación falló, explica su error en palabras sencillas y cómo resolverlo.`,
@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
     time: line(x?.time, 5),
     topic: line(x?.topic, 160),
     networks: (Array.isArray(x?.networks) ? x.networks : []).map(String).filter((n: string) => NETWORKS.includes(n)),
-    music: x?.type === 'video' && x?.music === true,
+    music: x?.music === true,
     musicQuery: line(x?.musicQuery, 100),
   }))
   const text = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max)

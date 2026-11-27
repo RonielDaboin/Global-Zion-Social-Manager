@@ -2793,6 +2793,29 @@ button.ali-plan-tag > span:first-child { min-width: 0; }
   .ali::-webkit-scrollbar-thumb, .ali-body::-webkit-scrollbar-thumb, .ali-options::-webkit-scrollbar-thumb, .ali-change dl::-webkit-scrollbar-thumb, .ali .ali-input textarea::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: linear-gradient(#3b92e0, #6a5be0 55%, #c2339b) padding-box; }
 }
 
+/* Foto como Reel con música */
+.preel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+.preel > .save-copy { margin: 0; }
+.preel-body { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: start; }
+.preel-body > .igm { margin: 0; min-width: 0; }
+.preel-view { margin: 0; display: grid; gap: 6px; text-align: center; }
+.preel-view img, .preel-view span { width: 100%; aspect-ratio: 9 / 16; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+.preel-view span { background: var(--bg2); }
+.preel-view figcaption { font-size: 12px; color: var(--muted); }
+@media (max-width: 640px) { .preel-body { grid-template-columns: minmax(0, 1fr); } .preel-view { width: 150px; justify-self: center; } }
+
+/* Animación de la imagen: sección plegable */
+.ms-toggle { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 14px; padding: 11px 14px; text-align: left; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--bg2) 65%, transparent); transition: border-color .18s, box-shadow .18s; }
+.ms-toggle:hover, .ms-toggle[aria-expanded="true"] { border-color: #6a5be0; box-shadow: 0 12px 26px -20px #6a5be0; }
+.ms-toggle-ico { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; font-size: 19px; background: linear-gradient(135deg, #3b92e033, #c2339b33); }
+.ms-toggle-txt { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.ms-toggle-txt b { font-size: 14px; }
+.ms-toggle-txt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--muted); }
+.ms-toggle-act { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 14px; font-size: 12px; font-weight: 700; color: #fff; border-radius: 999px; background: linear-gradient(120deg, #3b82f6, #c026d3); }
+.ms-toggle-act i { width: 6px; height: 6px; margin-top: -3px; border: solid currentColor; border-width: 0 2px 2px 0; rotate: 45deg; transition: rotate .2s, margin .2s; }
+.ms-toggle[aria-expanded="true"] .ms-toggle-act i { rotate: 225deg; margin-top: 3px; }
+.ms-content:not([hidden]) { margin-top: 10px; }
+
 /* Logo que lleva al Panel */
 .logo-link { margin: 0; padding: 0; border: 0; background: none; text-align: left; transition: opacity .15s; }
 .logo-link:hover { opacity: .82; }
