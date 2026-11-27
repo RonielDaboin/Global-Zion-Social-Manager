@@ -45,7 +45,8 @@ export function cleanItems(items) {
     const date = String(x.date || '')
     const m = String(x.time || '').match(/^(\d{1,2}):(\d{2})$/)
     const time = m && Number(m[1]) < 24 && Number(m[2]) < 60 ? `${pad(Number(m[1]))}:${m[2]}` : ''
-    return { type: x.type === 'video' ? 'video' : 'image', date, time, topic: String(x.topic || ''), networks: x.networks || [] }
+    const video = x.type === 'video'
+    return { type: video ? 'video' : 'image', date, time, topic: String(x.topic || ''), networks: x.networks || [], music: video && !!x.music, musicQuery: String(x.musicQuery || '') }
   }).filter((x) => Number.isFinite(slotTime(x.date, '12:00')))
 }
 

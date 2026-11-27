@@ -2734,6 +2734,65 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .ali-help button:disabled { opacity: .5; }
 @media (min-width: 1200px) { body.ali-docked .shell { padding-right: 440px; } }
 
+/* Alicia: modo autoritario */
+.ali-auto { flex: none; display: flex; align-items: center; gap: 10px; margin: 10px 14px 0; padding: 9px 12px; text-align: left; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--card) 80%, transparent); transition: border-color .2s, box-shadow .2s, background .2s; }
+.ali-wrap.cine .ali-auto { margin-left: clamp(16px, 4vw, 40px); margin-right: clamp(16px, 4vw, 40px); }
+.ali-auto:disabled { opacity: .65; cursor: not-allowed; }
+.ali-auto-ico { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; font-size: 17px; background: var(--bg2); filter: grayscale(1); }
+.ali-auto-txt { flex: 1; min-width: 0; display: grid; }
+.ali-auto-txt b { font-size: 13.5px; }
+.ali-auto-txt small { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.ali-auto em { flex: none; min-width: 26px; font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-align: right; color: var(--muted); }
+.ali-auto i, .ali .ali-check input { position: relative; flex: none; width: 40px; height: 22px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 38%, transparent); transition: background .2s, box-shadow .2s; }
+.ali-auto i::after, .ali .ali-check input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px #0006; transition: translate .2s cubic-bezier(.3, 1.4, .5, 1); }
+.ali-auto[aria-checked="true"] { border: 1.5px solid transparent; background: linear-gradient(120deg, color-mix(in srgb, #22d3ee 12%, var(--card)), color-mix(in srgb, #e0399f 16%, var(--card))) padding-box, conic-gradient(from var(--ali-angle), #22d3ee, #6a5be0, #e0399f, #ffb45e, #22d3ee) border-box; box-shadow: 0 10px 28px -16px #e0399f; animation: aliBorder 4s linear infinite; }
+.ali-auto[aria-checked="true"] .ali-auto-ico { filter: none; background: linear-gradient(135deg, #1c1046, #6a5be0); box-shadow: 0 0 14px -2px #7c4dff; }
+.ali-auto[aria-checked="true"] em { color: var(--text); }
+.ali-auto[aria-checked="true"] i, .ali .ali-check input:checked { background: linear-gradient(120deg, #22d3ee, #6a5be0 55%, #e0399f); box-shadow: 0 0 12px -2px #7c4dff; }
+.ali-auto[aria-checked="true"] i::after { translate: 18px 0; }
+.ali .ali-check input { appearance: none; -webkit-appearance: none; width: 34px; height: 20px; margin: 0; padding: 0; border: 0; cursor: pointer; }
+.ali .ali-check input::after { top: 3px; left: 3px; width: 14px; height: 14px; }
+.ali .ali-check input:checked::after { translate: 14px 0; }
+.ali .ali-check input:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Alicia: campos propios (fecha y video) en lugar de los del navegador */
+.ali-field { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 46px; padding: 6px 12px 6px 7px; text-align: left; font-size: 13.5px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); transition: border-color .18s, box-shadow .18s; }
+.ali-field:hover:not(:disabled), .ali-field.open { border-color: #6a5be0; box-shadow: 0 10px 22px -16px #6a5be0; }
+.ali-field:disabled { opacity: .65; cursor: default; }
+.ali-field-ico { flex: none; width: 32px; height: 32px; overflow: hidden; display: grid; place-items: center; border-radius: 10px; font-size: 16px; background: linear-gradient(135deg, #3b92e033, #c2339b33); }
+.ali-field-ico img { width: 100%; height: 100%; object-fit: cover; }
+.ali-field-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ali-when .ali-field-txt::first-letter { text-transform: uppercase; }
+.ali-time { flex: none; padding: 4px 10px; border-radius: 999px; font-weight: 800; font-size: 12.5px; font-variant-numeric: tabular-nums; color: #fff; background: linear-gradient(120deg, #3b82f6, #c026d3); }
+.ali-chev { flex: none; width: 8px; height: 8px; margin: -4px 2px 0 0; border: solid var(--muted); border-width: 0 2px 2px 0; rotate: 45deg; transition: rotate .2s, margin .2s; }
+.ali-field.open .ali-chev { rotate: 225deg; margin-top: 4px; }
+.ali-pick { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+.ali-options { list-style: none; margin: 0; padding: 6px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; max-height: 232px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border: 1px solid #6a5be066; border-radius: 14px; background: var(--card); box-shadow: 0 18px 34px -20px #000c; animation: aliIn .18s ease-out; }
+.ali-options button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 5px 10px 5px 5px; text-align: left; font-size: 13px; border: 0; border-radius: 10px; background: transparent; }
+.ali-options button:hover { background: color-mix(in srgb, #6a5be0 18%, transparent); }
+.ali-options button.on { background: linear-gradient(120deg, #3b92e02e, #c2339b33); font-weight: 700; }
+.ali-item input[type="text"] { padding: 11px 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); }
+.ali-item input[type="text"]:focus { outline: 0; border-color: #6a5be0; box-shadow: 0 0 0 3px #6a5be02e; }
+.ali-song { font-size: 12.5px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .ali-auto[aria-checked="true"], .ali-options { animation: none; } }
+
+/* Alicia: listas plegables y texto de cada publicación sin barra de desplazamiento */
+button.ali-plan-tag { width: 100%; padding: 4px 0; border: 0; background: none; text-align: left; cursor: pointer; }
+button.ali-plan-tag > span:first-child { min-width: 0; }
+.ali-plan-tag .ali-fold { order: 1; flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; text-transform: none; color: var(--text); border: 1px solid var(--line); border-radius: 999px; background: var(--bg2); transition: border-color .18s; }
+.ali-plan-tag:hover .ali-fold { border-color: #6a5be0; }
+.ali-fold i { width: 6px; height: 6px; border: solid currentColor; border-width: 0 2px 2px 0; rotate: 225deg; translate: 0 2px; transition: rotate .2s, translate .2s; }
+.ali-plan-tag[aria-expanded="false"] .ali-fold i { rotate: 45deg; translate: 0 -1px; }
+.ali-plan ul[hidden] { display: none; }
+.ali-cap { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; max-height: none; overflow: hidden; }
+
+/* Alicia: barras de desplazamiento finas y redondeadas, sin las flechas de Windows */
+@supports selector(::-webkit-scrollbar) {
+  .ali, .ali-body, .ali-options, .ali-change dl, .ali .ali-input textarea { scrollbar-width: auto; }
+  .ali::-webkit-scrollbar, .ali-body::-webkit-scrollbar, .ali-options::-webkit-scrollbar, .ali-change dl::-webkit-scrollbar, .ali .ali-input textarea::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+  .ali::-webkit-scrollbar-thumb, .ali-body::-webkit-scrollbar-thumb, .ali-options::-webkit-scrollbar-thumb, .ali-change dl::-webkit-scrollbar-thumb, .ali .ali-input textarea::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: linear-gradient(#3b92e0, #6a5be0 55%, #c2339b) padding-box; }
+}
+
 /* Logo que lleva al Panel */
 .logo-link { margin: 0; padding: 0; border: 0; background: none; text-align: left; transition: opacity .15s; }
 .logo-link:hover { opacity: .82; }

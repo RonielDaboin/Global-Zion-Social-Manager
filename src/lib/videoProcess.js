@@ -152,11 +152,15 @@ export const vFormat = (id) => VFORMATS.find((f) => f.id === id) || VFORMATS[0]
 /** fit: 'cover' llena el cuadro recortando (px/py = encuadre 0..1) · 'contain' muestra todo con barras del color `bg`. */
 export const FRAME0 = { format: 'orig', fit: 'cover', px: 0.5, py: 0.5, bg: '#000000' }
 export const frameIsDefault = (fr) => !fr || fr.format === 'orig'
+// El video editado debe caber en el límite de subida (50 MB): cuanto más dura, menos bitrate
+const AUDIO_BPS = 128e3
+const TARGET_BYTES = 44 * 1048576
+export const videoBitrate = (seconds) => Math.round(Math.max(1e6, Math.min(8e6, (TARGET_BYTES * 8) / Math.max(1, seconds) - AUDIO_BPS)))
 /** Tamaño final del video para un fotograma de origen sw×sh. */
 export function targetSize(fr, sw, sh) {
   const f = vFormat(fr?.format)
   if (f.id === 'orig') {
-    const k = Math.min(1, 1080 / Math.max(sw, sh))
+    const k = Math.min(1, 1920 / Math.max(sw, sh), 1080 / Math.min(sw, sh)) // hasta Full HD, vertical u horizontal
     return { w: Math.max(2, Math.round((sw * k) / 2) * 2), h: Math.max(2, Math.round((sh * k) / 2) * 2) }
   }
   return { w: f.w, h: f.h }
@@ -210,7 +214,7 @@ async function processRealtime(file, { start, end, fx, mute, texts, onProgress, 
     drawVignette(ctx, w, h, fx.vignette)
     drawTextLayers(ctx, w, h, texts, start) // primer fotograma antes de grabar: evita parpadeo negro
 
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6, audioBitsPerSecond: 128e3 })
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: videoBitrate(end - start), audioBitsPerSecond: AUDIO_BPS })
     const chunks = []
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data)
     const stopped = new Promise((res) => { rec.onstop = res })
@@ -263,7 +267,7 @@ async function processWebCodecs(file, { start, end, fx, mute, texts, onProgress,
     video: async (track) => {
       const { w, h } = targetSize(frame, track.displayWidth, track.displayHeight)
       const R = frameRect(track.displayWidth, track.displayHeight, w, h, frame)
-      const o = { width: w, height: h, fit: 'fill', codec: 'avc', bitrate: 8e6 }
+      const o = { width: w, height: h, fit: 'fill', codec: 'avc', bitrate: videoBitrate(end - start) }
       if (useFx) {
         const cv = document.createElement('canvas')
         cv.width = w; cv.height = h

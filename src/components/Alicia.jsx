@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS, uid } from '../lib/formats.js'
-import { askAlicia, createPost } from '../lib/aliciaCreate.js'
+import { askAlicia, createPost, pickIgMusic } from '../lib/aliciaCreate.js'
+import { WhenPopover } from './WhenPicker.jsx'
 import { calendarLines, cleanItems, fillTimes, isPast, networksFor, slotTime, dayString, timeString } from '../lib/aliciaPlan.js'
 import { fetchContent } from '../lib/content.js'
 import { contentUse } from '../lib/contentDraft.js'
@@ -19,6 +20,7 @@ import AiOrb from './AiOrb.jsx'
 
 const AUTO_SEND_KEY = 'gz_voice_autosend'
 const CINE_KEY = 'gz_alicia_cine'
+const AUTO_MODE_KEY = 'gz_alicia_auto'
 const MAX_MESSAGES = 40
 const EXAMPLES = [
   ['🎬', 'Haz 2 publicaciones de imagen y 1 de video para el lunes y el martes'],
@@ -71,6 +73,66 @@ function assignVideos(items, videos, previous = []) {
   })
 }
 
+/** Encabezado de una lista de la charla, con el botón para plegarla y que no tape la conversación. */
+function ListHead({ label, count, folded, onToggle }) {
+  return (
+    <button type="button" className="ali-plan-tag" aria-expanded={!folded} onClick={onToggle}>
+      <span>{label}</span> <em>{count}</em>
+      <span className="ali-fold">{folded ? t('Ver') : t('Ocultar')} <i aria-hidden="true" /></span>
+    </button>
+  )
+}
+
+/** Fecha y hora de una publicación con el calendario propio de la app. */
+function When({ date, time, disabled, onChange }) {
+  const [open, setOpen] = useState(false)
+  const anchor = useRef(null)
+  return (
+    <>
+      <button type="button" ref={anchor} className={'ali-field ali-when' + (open ? ' open' : '')} disabled={disabled} onClick={() => setOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={open} aria-label={t('Fecha') + ' ' + t('Hora')}>
+        <span className="ali-field-ico" aria-hidden="true">🗓️</span>
+        <span className="ali-field-txt">{dayLabel(date)}</span>
+        <span className="ali-time">{time}</span>
+      </button>
+      {open && !disabled && <WhenPopover anchor={anchor.current} value={`${date}T${time}`} onClose={() => setOpen(false)} onChange={(v) => onChange({ date: v.slice(0, 10), time: v.slice(11, 16) })} />}
+    </>
+  )
+}
+
+/** Lista de videos de Contenido con su miniatura. */
+function VideoPick({ videos, value, disabled, onChange }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef(null)
+  const chosen = videos.find((v) => v.id === value)
+  const thumb = (v) => <span className="ali-field-ico" aria-hidden="true">{v?.thumb ? <img src={v.thumb} alt="" /> : '🎬'}</span>
+  useEffect(() => {
+    if (!open) return undefined
+    const down = (e) => { if (!box.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('pointerdown', down)
+    return () => document.removeEventListener('pointerdown', down)
+  }, [open])
+  return (
+    <div className="ali-pick" ref={box}>
+      <button type="button" className={'ali-field' + (open ? ' open' : '')} disabled={disabled} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={t('Video de Contenido')}>
+        {thumb(chosen)}
+        <span className="ali-field-txt">{chosen ? chosen.name : t('Elige un video de Contenido…')}</span>
+        <i className="ali-chev" aria-hidden="true" />
+      </button>
+      {open && !disabled && (
+        <ul className="ali-options">
+          {videos.map((v) => (
+            <li key={v.id}>
+              <button type="button" className={v.id === value ? 'on' : ''} aria-pressed={v.id === value} onClick={() => { onChange(v.id); setOpen(false) }}>
+                {thumb(v)}<span className="ali-field-txt">{v.name}</span>{v.id === value && <b aria-hidden="true">✓</b>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
   const video = it.type === 'video' ? videos?.find((v) => v.id === it.contentId) : null
   const created = !!it.postId
@@ -93,25 +155,21 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
         </div>
         {!created && <button type="button" className="icon-btn" disabled={busy} onClick={onRemove} title={t('Quitar')} aria-label={t('Quitar')}><Icon name="x" size={15} /></button>}
       </div>
-      <div className="ali-when">
-        <input type="date" value={date} disabled={busy || !editableDate} aria-label={t('Fecha')} onChange={(e) => e.target.value && onChange({ date: e.target.value })} />
-        <input type="time" value={time} disabled={busy || !editableDate} aria-label={t('Hora')} onChange={(e) => e.target.value && onChange({ time: e.target.value })} />
-      </div>
+      <When date={date} time={time} disabled={busy || !editableDate} onChange={onChange} />
       {editableDate && isPast(date, time) && <p className="ali-warn">⚠️ {t('Esa hora ya pasó: cámbiala para poder programarla.')}</p>}
       {!created && (
         <>
           <input type="text" value={it.topic} maxLength={160} disabled={busy} aria-label={t('Tema')} onChange={(e) => onChange({ topic: e.target.value })}
             placeholder={it.type === 'video' ? t('Tema (opcional: la IA mira el video)') : t('Tema (si queda vacío, uno al azar)')} />
           {it.type === 'video' && videos && (videos.length
-            ? (
-              <select value={it.contentId || ''} disabled={busy} aria-label={t('Video de Contenido')} onChange={(e) => onChange({ contentId: e.target.value || null })}>
-                <option value="">{t('Elige un video de Contenido…')}</option>
-                {videos.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            )
+            ? <VideoPick videos={videos} value={it.contentId} disabled={busy} onChange={(contentId) => onChange({ contentId })} />
             : <p className="ali-warn">⚠️ {t('No hay videos libres. Sube uno en la sección Contenido.')}</p>)}
+          {it.type === 'video' && (
+            <label className="ali-check"><input type="checkbox" checked={!!it.music} disabled={busy} onChange={(e) => onChange({ music: e.target.checked })} /> 🎵 {t('Con música de Instagram')}</label>
+          )}
         </>
       )}
+      {post?.igMusic && <p className="ali-song">🎵 {[post.igMusic.title, post.igMusic.artist].filter(Boolean).join(' · ')}</p>}
       {post && <p className="ali-cap">{post.caption}</p>}
       {it.error && <p className="ali-warn">❌ {it.error}</p>}
       {post && !['published', 'publishing'].includes(post.status) && (
@@ -156,7 +214,7 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
 }
 
 export default function Alicia({ page, onEdit }) {
-  const { session, posts, accounts, access, openPlans, savePost, notify } = useApp()
+  const { session, posts, accounts, access, openPlans, savePost, publishNow, notify } = useApp()
   useLang()
   const storeKey = `gz_alicia_${session.id}`
   const [open, setOpen] = useState(false)
@@ -167,6 +225,13 @@ export default function Alicia({ page, onEdit }) {
   const [edits, setEdits] = useState(() => read(storeKey).edits || []) // cambios propuestos a publicaciones
   const [withPhoto, setWithPhoto] = useState(() => read(storeKey).withPhoto !== false)
   const [draft, setDraft] = useState('')
+  // Modo autoritario: crea, programa y publica lo pedido sin preguntar. Se recuerda en este dispositivo.
+  const autoKey = `${AUTO_MODE_KEY}_${session.id}`
+  const [auto, setAuto] = useState(() => { try { return localStorage.getItem(autoKey) === '1' } catch { return false } })
+  const toggleAuto = () => setAuto((on) => { try { localStorage.setItem(autoKey, on ? '0' : '1') } catch { /* ignore */ } return !on })
+  const [folded, setFolded] = useState(() => read(storeKey).folded || {}) // listas plegadas: { plan, edits }
+  const fold = (name) => setFolded((f) => ({ ...f, [name]: !f[name] }))
+  const [watch, setWatch] = useState(() => read(storeKey).watch || []) // lo que lanzó sola y aún no termina
   const [thinking, setThinking] = useState(false)
   const [progress, setProgress] = useState(null) // { key, n, total, step } mientras se crean
   const [videos, setVideos] = useState(null) // videos libres de Contenido; null = sin cargar
@@ -176,8 +241,8 @@ export default function Alicia({ page, onEdit }) {
   const busy = thinking || !!progress
 
   useEffect(() => {
-    try { localStorage.setItem(storeKey, JSON.stringify({ msgs: msgs.slice(-MAX_MESSAGES), items, edits, withPhoto })) } catch { /* ignore */ }
-  }, [msgs, items, edits, withPhoto, storeKey])
+    try { localStorage.setItem(storeKey, JSON.stringify({ msgs: msgs.slice(-MAX_MESSAGES), items, edits, watch, folded, withPhoto })) } catch { /* ignore */ }
+  }, [msgs, items, edits, watch, folded, withPhoto, storeKey])
   useEffect(() => () => { stop.current = 'unmounted' }, []) // al cerrar sesión no se sigue creando
   // Se deja arriba el último mensaje: así se lee la respuesta y debajo queda el plan
   useEffect(() => {
@@ -188,7 +253,7 @@ export default function Alicia({ page, onEdit }) {
   useEffect(() => {
     if (!open) return undefined
     const k = (e) => {
-      if (e.key !== 'Escape' || document.querySelector('.modal-bg')) return
+      if (e.key !== 'Escape' || document.querySelector('.modal-bg, .wp')) return
       if (cine) toggleCine(false); else setOpen(false)
     }
     window.addEventListener('keydown', k)
@@ -234,6 +299,7 @@ export default function Alicia({ page, onEdit }) {
     say('me', message)
     if (overLimit()) { say('err', limitMessage()); return }
     setThinking(true)
+    let job = null // lo que toca hacer sin preguntar, cuando la IA ya contestó
     try {
       const free = await freeVideosFor(postsRef.current).catch(() => null)
       if (free) setVideos(free)
@@ -245,10 +311,11 @@ export default function Alicia({ page, onEdit }) {
       const picture = editor?.hasMedia ? await editorBridge.current.image().catch(() => null) : null
       const { context, refs } = appContext({ page, posts: postsRef.current, accounts, editor })
       const r = await askAlicia({
-        context, image: picture,
+        context, image: picture, auto,
         message, history, topics: TOPICS, freeVideos: free?.length || 0,
         calendar: calendarLines(new Date(), getLang()), now: new Date().toString().slice(0, 21),
-        plan: pending.map(({ type, date, time, topic, asked }) => ({ type, date, time, topic, networks: asked || [] })),
+        // En modo autoritario solo se actúa sobre lo que se pide ahora: un plan viejo sin crear no se lanza solo
+        plan: auto ? [] : pending.map(({ type, date, time, topic, asked, music, musicQuery }) => ({ type, date, time, topic, networks: asked || [], music: !!music, musicQuery: musicQuery || '' })),
       })
       aiTextBump(session.id)
       const clean = r.action === 'plan' ? cleanItems(r.items) : []
@@ -259,18 +326,29 @@ export default function Alicia({ page, onEdit }) {
       if (r.action === 'edit' && !proposed.length) throw new Error(t('No supe qué publicación cambiar. Dime cuál es.'))
       if (r.action === 'plan' && !clean.length) throw new Error(t('No entendí las fechas. Dime los días de otra forma.'))
       say('ai', r.reply || (proposed.length ? t('Te propongo estos cambios. Revísalos antes de aplicarlos.') : t('Este es el plan. Revísalo antes de crear las publicaciones.')))
-      if (proposed.length) setEdits(proposed)
+      // Un servidor sin actualizar no entiende este modo (ignoraría la música): ahí se pide confirmación como siempre
+      const free_ = auto && !!r.publish
+      if (auto && !r.publish) say('err', t('El modo autoritario necesita actualizar el servidor de Alicia. Por ahora confirma tú con los botones.'))
+      if (proposed.length) {
+        setEdits(proposed)
+        setFolded((f) => ({ ...f, edits: false }))
+        if (free_) job = () => proposed.forEach(apply)
+      }
       if (!clean.length) return
       const taken = postsRef.current.filter((p) => p.status === 'scheduled').map((p) => p.scheduledAt)
       const planned = fillTimes(clean, taken).map(({ networks, ...it }) => ({
         ...it, key: uid(), asked: networks, platforms: networksFor(it.type, networks, accounts, access.limits.platforms),
       }))
-      setItems(assignVideos(planned, free || [], items))
+      const next = assignVideos(planned, free || [], free_ ? [] : items)
+      setItems(next)
+      setFolded((f) => ({ ...f, plan: false }))
+      if (free_) job = () => run(next, r.publish === 'draft' ? null : r.publish)
       if (made) say('ai', t('Las publicaciones que ya había creado siguen guardadas en Publicaciones. 📁'))
     } catch (e) {
       say('err', e.message)
       setDraft(message)
     } finally { setThinking(false) }
+    await job?.()
   }
 
   const [autoSend, setAutoSend] = useState(() => { try { return localStorage.getItem(AUTO_SEND_KEY) === '1' } catch { return false } })
@@ -289,10 +367,34 @@ export default function Alicia({ page, onEdit }) {
   }
 
   const pending = items.filter((x) => !x.postId)
-  const create = async () => {
-    if (busy || !pending.length) return
+  // Programa o publica sin preguntar lo que se acaba de crear en modo autoritario. Devuelve el mensaje para el chat.
+  const launchNow = async (it, post, mode, wasFuture) => {
+    const at = slotTime(it.date, it.time)
+    const when = `${dayLabel(it.date)} · ${it.time}`
+    const missing = post.platforms.filter((p) => !accounts[p])
+    if (missing.length) throw new Error(t('Conecta primero: {p}', { p: missing.map((p) => PLATFORMS[p].name).join(', ') }))
+    // Si la hora pedida llegó mientras se creaba, se publica ya; si ya había pasado al pedirlo, no se publica
+    const now = mode === 'now' || (wasFuture && at <= Date.now())
+    if (!now) {
+      if (!(at > Date.now())) throw new Error(t('Esa hora ya pasó: cámbiala para poder programarla.'))
+      if (!access.limits.scheduledPerMonth || scheduledInMonth(postsRef.current, at, post.id) >= access.limits.scheduledPerMonth) throw new Error(t('Tu plan no permite programar más publicaciones ese mes.'))
+      const next = { ...post, status: 'scheduled', scheduledAt: at }
+      savePost(next)
+      postsRef.current = postsRef.current.map((p) => (p.id === next.id ? next : p))
+      return t('📅 Programada para {w}. Deja la app abierta a esa hora: desde ella se envía.', { w: when })
+    }
+    savePost(post, { publishing: true })
+    await new Promise((r) => setTimeout(r, 150)) // el guardado se asienta antes de publicar
+    publishNow(post.id)
+    return t('🚀 La estoy publicando ahora.')
+  }
+
+  /** Crea las publicaciones de `list`. Con `mode` ('schedule' | 'now') además las programa o publica sin preguntar. */
+  const run = async (list, mode = null) => {
+    if (!list.length) return
     stop.current = false
-    const queue = [...pending]
+    const queue = [...list]
+    const requested = Date.now()
     // La pantalla se mantiene encendida: si el teléfono se bloquea, se corta la creación
     const awake = await navigator.wakeLock?.request('screen').catch(() => null)
     let done = 0
@@ -308,27 +410,55 @@ export default function Alicia({ page, onEdit }) {
           // Se vuelve a comprobar: otra persona pudo usar el video mientras tanto
           const free = await freeVideosFor(postsRef.current)
           content = free.find((v) => v.id === it.contentId)
-          if (!content) throw new Error(it.contentId ? t('Ese video ya no está disponible. Elige otro.') : t('Elige un video de Contenido para esta publicación.'))
+          if (!content) throw new Error(it.contentId ? t('Ese video ya no está disponible. Elige otro.') : free.length ? t('Elige un video de Contenido para esta publicación.') : t('No hay videos libres. Sube uno en la sección Contenido.'))
+        }
+        // La música se elige antes de crear: si no se puede poner, no se gasta nada ni se publica sin ella
+        let igMusic = null
+        if (it.type === 'video' && it.music) {
+          if (!it.platforms.includes('instagram') || !accounts.instagram?.real) throw new Error(t('La música solo se puede poner en Reels con Instagram conectado.'))
+          onStep(t('Eligiendo la música…'))
+          igMusic = await pickIgMusic(it.musicQuery)
         }
         const id = uid()
-        const post = await createPost({ type: it.type, id, topic: it.topic, platforms: it.platforms, scheduledAt: slotTime(it.date, it.time), content, withPhoto, onStep })
+        const made = await createPost({ type: it.type, id, topic: it.topic, platforms: it.platforms, scheduledAt: slotTime(it.date, it.time), content, withPhoto, onStep })
+        const post = igMusic ? { ...made, igMusic } : made
         if (stop.current === 'unmounted') return
         savePost(post)
         postsRef.current = [post, ...postsRef.current] // para que el siguiente video no repita este
         aiTextBump(session.id)
         patch(it.key, { postId: post.id })
         done++
+        // Si se pulsó «Detener», lo ya creado queda como borrador
+        if (mode && !stop.current) {
+          const note = await launchNow(it, post, mode, slotTime(it.date, it.time) > requested)
+          setWatch((l) => [...l, post.id].slice(-30))
+          say('ai', (igMusic ? t('🎵 Le puse «{m}».', { m: [igMusic.title, igMusic.artist].filter(Boolean).join(' · ') }) + ' ' : '') + note)
+        }
       } catch (e) {
-        patch(it.key, { error: e?.message || String(e) })
+        const message = e?.message || String(e)
+        patch(it.key, { error: message })
+        if (mode) say('err', message)
       }
     }
     awake?.release().catch(() => {})
     setProgress(null)
     setVideos(null)
-    if (done) say('ai', t('¡Listo! ✨ Creé {n} de {total} como borrador. Revísalas y, cuando quieras, pulsa «Programar todo».', { n: done, total: queue.length }))
-    else say('ai', t('No pude crear las publicaciones. 😕 Mira el aviso de cada una y vuelve a intentarlo.'))
+    if (!done) say('ai', t('No pude crear las publicaciones. 😕 Mira el aviso de cada una y vuelve a intentarlo.'))
+    else if (!mode) say('ai', t('¡Listo! ✨ Creé {n} de {total} como borrador. Revísalas y, cuando quieras, pulsa «Programar todo».', { n: done, total: queue.length }))
     notify(t('Alicia terminó: {n} de {total} publicaciones creadas.', { n: done, total: queue.length }), done ? 'ok' : 'err')
   }
+  const create = () => (busy ? undefined : run(pending))
+
+  // De lo que Alicia lanzó sola, avisa en el chat cómo terminó
+  useEffect(() => {
+    const ended = watch.map((id) => posts.find((p) => p.id === id)).filter((p) => p && ['published', 'failed'].includes(p.status))
+    if (!ended.length) return
+    setWatch((l) => l.filter((id) => !ended.some((p) => p.id === id)))
+    for (const p of ended) {
+      if (p.status === 'published') say('ai', t('✅ ¡Publicada con éxito!'))
+      else say('err', t('La publicación falló: {e}', { e: Object.entries(p.results || {}).filter(([, r]) => !r.ok).map(([k, r]) => `${PLATFORMS[k]?.name || k}: ${r.error}`).join(' · ') }))
+    }
+  }, [posts, watch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const postOf = (it) => (it.postId ? posts.find((p) => p.id === it.postId) : null)
   const drafts = items.filter((x) => postOf(x)?.status === 'draft')
@@ -415,7 +545,7 @@ export default function Alicia({ page, onEdit }) {
     return markEdit(ed.key, { error: null, before: null })
   }
 
-  const clear = () => { setMsgs([]); setItems([]); setEdits([]); setDraft(''); setVideos(null) }
+  const clear = () => { setMsgs([]); setItems([]); setEdits([]); setDraft(''); setVideos(null) } // lo programado se sigue vigilando
 
   const launch = () => {
     if (!access.limits.autoPost) return openPlans(t('Alicia está disponible en el plan Premium.'))
@@ -434,11 +564,11 @@ export default function Alicia({ page, onEdit }) {
   const created = items.length - pending.length
   const empty = !msgs.length && !items.length && !edits.length
   const composing = page === 'composer'
-  const status = progress ? t('Creando tus publicaciones…') : thinking ? t('Pensando…') : voice.listening ? t('Te escucho…') : composing ? t('Viendo lo que estás creando 👀') : t('Tu asistente de publicaciones')
+  const status = progress ? t('Creando tus publicaciones…') : thinking ? t('Pensando…') : voice.listening ? t('Te escucho…') : composing ? t('Viendo lo que estás creando 👀') : auto ? t('Modo autoritario activo ⚡') : t('Tu asistente de publicaciones')
   const cineLabel = cine ? t('Salir del modo cine') : t('Modo cine')
   // El envoltorio existe siempre: al cambiar de modo la ventana no se vuelve a montar
   return (
-    <div className={'ali-wrap' + (cine ? ' cine' : '')} onClick={(e) => { if (cine && e.target === e.currentTarget) toggleCine(false) }}>
+    <div className={'ali-wrap' + (cine ? ' cine' : '') + (auto ? ' auto' : '')} onClick={(e) => { if (cine && e.target === e.currentTarget) toggleCine(false) }}>
       <section className="ali" role="dialog" aria-modal={cine} aria-label="Alicia">
         <header className="ali-head">
           <AiOrb className="ali-av" orbit busy={busy} />
@@ -451,13 +581,23 @@ export default function Alicia({ page, onEdit }) {
           <button type="button" className="ali-tool" onClick={() => setOpen(false)} title={t('Cerrar')} aria-label={t('Cerrar')}><Icon name="x" size={18} /></button>
         </header>
 
+        <button type="button" className="ali-auto" role="switch" aria-checked={auto} disabled={busy} onClick={toggleAuto}>
+          <span className="ali-auto-ico" aria-hidden="true">⚡</span>
+          <span className="ali-auto-txt">
+            <b>{t('Modo autoritario')}</b>
+            <small>{auto ? t('Alicia crea, programa y publica sin preguntar.') : t('Alicia te pide confirmación antes de actuar.')}</small>
+          </span>
+          <em>{auto ? 'ON' : 'OFF'}</em>
+          <i aria-hidden="true" />
+        </button>
+
         <div className="ali-body" ref={body}>
           <div className="ali-log" aria-live="polite">
             {empty && !thinking ? (
               <div className="ali-hero">
                 <AiOrb className="ali-hero-av" orbit />
                 <h2>{t('¡Hola! Soy Alicia')} 👋</h2>
-                <p>{t('Dime qué publicaciones quieres y para qué días. Antes de crear nada te muestro el plan, y no programo nada sin tu confirmación.')}</p>
+                <p>{auto ? t('Dime qué publicar y cuándo. Lo hago todo sola: elijo el video y la música, y lo programo o publico sin preguntarte.') : t('Dime qué publicaciones quieres y para qué días. Antes de crear nada te muestro el plan, y no programo nada sin tu confirmación.')}</p>
                 <div className="ali-examples">
                   {EXAMPLES.map(([icon, x]) => (
                     <button key={x} type="button" disabled={busy} onClick={() => send(t(x))}><span aria-hidden="true">{icon}</span> <span>{t(x)}</span></button>
@@ -480,8 +620,8 @@ export default function Alicia({ page, onEdit }) {
 
           {edits.length > 0 && (
             <div className="ali-plan">
-              <span className="ali-plan-tag">{t('Cambios propuestos')} <em>{edits.length}</em></span>
-              <ul>
+              <ListHead label={t('Cambios propuestos')} count={edits.length} folded={folded.edits} onToggle={() => fold('edits')} />
+              <ul hidden={folded.edits}>
                 {edits.map((ed) => (
                   <Change key={ed.key} ed={ed} post={ed.target === 'editor' ? null : posts.find((p) => p.id === ed.target)} busy={busy}
                     onApply={() => apply(ed)} onUndo={() => undo(ed)} onRemove={() => setEdits((l) => l.filter((x) => x.key !== ed.key))} />
@@ -492,8 +632,8 @@ export default function Alicia({ page, onEdit }) {
 
           {items.length > 0 && (
             <div className="ali-plan">
-              <span className="ali-plan-tag">{created ? t('Tus publicaciones') : t('Plan propuesto')} <em>{items.length}</em></span>
-              <ul>
+              <ListHead label={created ? t('Tus publicaciones') : t('Plan propuesto')} count={items.length} folded={folded.plan} onToggle={() => fold('plan')} />
+              <ul hidden={folded.plan}>
                 {items.map((it) => (
                   <Item key={it.key} it={it} post={postOf(it)} videos={videos} busy={busy} working={progress?.key === it.key}
                     onChange={(value) => change(it, value)} onRemove={() => setItems((l) => l.filter((x) => x.key !== it.key))}

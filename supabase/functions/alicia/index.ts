@@ -47,6 +47,7 @@ Deno.serve(async (req) => {
   const topics = (Array.isArray(b.topics) ? b.topics : []).slice(0, 40).map((x) => line(x, 60)).filter(Boolean)
   const freeVideos = Math.max(0, Math.min(Number(b.freeVideos) || 0, 999))
   const lang = b.lang === 'en' ? 'inglés' : 'español'
+  const auto = b.auto === true // «modo autoritario»: la app hace lo pedido sin pedir confirmación
   // Lo que se ve en la app (sección, editor abierto, publicaciones) y una miniatura de lo que hay en el editor
   const context = b.context && typeof b.context === 'object' ? JSON.stringify(b.context).slice(0, 60000) : ''
   const picture = String(b.image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/)
@@ -64,6 +65,9 @@ Deno.serve(async (req) => {
     image ? 'La imagen adjunta es lo que hay ahora en el editor (la imagen diseñada o la portada del video).' : '',
     `PEDIDO DEL USUARIO: ${JSON.stringify(message)}`,
     `REGLAS:`,
+    auto ? `- MODO AUTORITARIO ACTIVO: el usuario quiere que se haga todo sin preguntarle. No pidas confirmación ni datos: completa tú lo que falte (hora, tema, redes) con lo más razonable. Usa "chat" solo para preguntas, saludos o cosas imposibles. En "reply" di en una frase lo que vas a hacer (la app avisa cuando termine; no digas que ya está hecho) y no menciones botones.` : '',
+    `- "publish": "now" SOLO si el pedido dice claramente publicar de inmediato (ya, ahora, al tiro); "draft" si pide solo crear, dejar en borrador o no programar; en cualquier otro caso "schedule". Con "now", usa la fecha de hoy y la hora actual.`,
+    `- "music": true solo en videos y solo si pide música. "musicQuery": canción, artista o estilo que pida; si no especifica, "". A las imágenes no se les puede poner música desde aquí: si la piden, dilo en "reply".`,
     `- "action": "plan" si el pedido crea publicaciones nuevas o cambia el plan sin crear; "edit" si pide cambiar la publicación del editor o una ya guardada; "chat" si es una pregunta, una revisión, un consejo, un saludo, algo que no puedes hacer o falta un dato imprescindible (pregunta en "reply"). "items" va vacío salvo con "plan", y "edits" vacío salvo con "edit".`,
     `- Con "edit", "edits" lleva un elemento por publicación (máximo ${MAX_ITEMS}). "target": "editor" para la del editor, o la "ref" de una guardada (solo con status draft, scheduled o failed). Si no queda claro cuál, usa la del editor si existe; si no, pregunta con "chat". Rellena SOLO los campos que cambian; los demás van como "" (o lista vacía). "description" es el texto completo nuevo, con sus saltos de línea, emojis acordes y las líneas de WhatsApp y web que ya tenga. "tags" son hashtags separados por espacios. Respeta el límite de caracteres ("maxLen") y no inventes ofertas, precios ni datos.`,
     `- No puedes cambiar la imagen ni el video, ni publicar, programar o borrar: explica qué botón usar. Al revisar, di en concreto qué está bien y qué mejorarías (texto, ortografía, hashtags, redes, hora, imagen) y avisa de lo que falte (cuentas sin conectar, texto vacío o demasiado largo). Si una publicación falló, explica su error en palabras sencillas y cómo resolverlo.`,
@@ -74,7 +78,8 @@ Deno.serve(async (req) => {
     `- "time": en formato HH:MM de 24 horas SOLO si el usuario pidió una hora (o ya estaba en el plan actual). Si no, "".`,
     `- "topic": de qué trata, en pocas palabras. Respeta el tema que pida. Si no pide tema, a cada imagen dale uno distinto de esta lista: ${topics.join(' | ')}. En los videos sin tema pedido, "" (la app mira el video para escribir el texto). No inventes ofertas, precios ni descuentos que el usuario no haya pedido.`,
     `- "networks": solo si el usuario nombra redes, con estos valores: ${NETWORKS.join(', ')}. Si no, lista vacía.`,
-    `- "reply": breve, con algún emoji que venga al caso: de una a tres frases, o hasta ocho líneas si es una revisión o un consejo. Texto simple, sin Markdown. Si hay plan, resume cómo lo repartiste e invita a revisarlo y pulsar «Crear publicaciones». Si hay cambios, resúmelos e invita a revisarlos y pulsar «Aplicar cambios».`,
+    auto ? '' : `- Como el modo autoritario está apagado, nada se hace sin que el usuario lo confirme con los botones.`,
+    `- "reply": breve, con algún emoji que venga al caso: de una a tres frases, o hasta ocho líneas si es una revisión o un consejo. Texto simple, sin Markdown. Si hay plan, resume cómo lo repartiste${auto ? '' : ' e invita a revisarlo y pulsar «Crear publicaciones»'}. Si hay cambios, resúmelos${auto ? '' : ' e invita a revisarlos y pulsar «Aplicar cambios»'}.`,
   ].filter(Boolean).join('\n')
 
   const call = (thinking: boolean, model: string) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -92,6 +97,7 @@ Deno.serve(async (req) => {
           type: 'OBJECT',
           properties: {
             action: { type: 'STRING', enum: ['plan', 'edit', 'chat'] },
+            publish: { type: 'STRING', enum: ['draft', 'schedule', 'now'] },
             edits: {
               type: 'ARRAY',
               maxItems: MAX_ITEMS,
@@ -121,12 +127,14 @@ Deno.serve(async (req) => {
                   time: { type: 'STRING' },
                   topic: { type: 'STRING' },
                   networks: { type: 'ARRAY', items: { type: 'STRING' } },
+                  music: { type: 'BOOLEAN' },
+                  musicQuery: { type: 'STRING' },
                 },
-                required: ['type', 'date', 'time', 'topic', 'networks'],
+                required: ['type', 'date', 'time', 'topic', 'networks', 'music', 'musicQuery'],
               },
             },
           },
-          required: ['action', 'reply', 'items', 'edits'],
+          required: ['action', 'publish', 'reply', 'items', 'edits'],
         },
       },
     }),
@@ -164,6 +172,8 @@ Deno.serve(async (req) => {
     time: line(x?.time, 5),
     topic: line(x?.topic, 160),
     networks: (Array.isArray(x?.networks) ? x.networks : []).map(String).filter((n: string) => NETWORKS.includes(n)),
+    music: x?.type === 'video' && x?.music === true,
+    musicQuery: line(x?.musicQuery, 100),
   }))
   const text = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max)
   const edits = (Array.isArray(out.edits) ? out.edits : []).slice(0, MAX_ITEMS).map((x) => ({
@@ -177,5 +187,7 @@ Deno.serve(async (req) => {
   })).filter((x) => x.target && (x.title || x.description || x.tags || x.date || x.time || x.networks.length))
   if (!reply && !items.length && !edits.length) return json({ error: 'Gemini no devolvió una respuesta (puede haber bloqueado el contenido)' }, 502)
   const action = out.action === 'plan' && items.length ? 'plan' : out.action === 'edit' && edits.length ? 'edit' : 'chat'
-  return json({ action, reply, items: action === 'plan' ? items : [], edits: action === 'edit' ? edits : [] })
+  // Si la IA no lo deja claro, nunca se publica al instante
+  const publish = out.publish === 'now' || out.publish === 'draft' ? out.publish : 'schedule'
+  return json({ action, publish, reply, items: action === 'plan' ? items : [], edits: action === 'edit' ? edits : [] })
 })

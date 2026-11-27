@@ -18,7 +18,7 @@ const PRESETS = [
 ]
 
 /** Calendario + hora propios (el del navegador no se puede estilizar). */
-function Popover({ anchor, value, onChange, onClose }) {
+export function WhenPopover({ anchor, value, onChange, onClose }) {
   const sel = new Date(value)
   const [view, setView] = useState(() => new Date(sel.getFullYear(), sel.getMonth(), 1))
   const [pos, setPos] = useState(null)
@@ -120,7 +120,7 @@ export default function WhenPicker({ value, onChange }) {
         <span className="when-txt"><b>{day}</b><small>{time && `🕒 ${time}`}{past && ` · ${t('Elige una fecha futura')}`}</small></span>
         <span className="when-edit">{t('Cambiar')}</span>
       </button>
-      {open && ok && <Popover anchor={anchor.current} value={value} onChange={onChange} onClose={() => setOpen(false)} />}
+      {open && ok && <WhenPopover anchor={anchor.current} value={value} onChange={onChange} onClose={() => setOpen(false)} />}
       <div className="when-chips">
         {PRESETS.map((p) => (
           <button key={p.l} type="button" className={'chip' + (sel(p) ? ' on' : '')} onClick={() => onChange(toInput(p.d()))}>{t(p.l)}</button>

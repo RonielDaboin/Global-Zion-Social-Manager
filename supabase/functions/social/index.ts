@@ -253,9 +253,15 @@ async function publishInstagram(a: Acc, j: Job) {
   if (music) body.audio_configuration = JSON.stringify({ audio_id: String(music.id), audio_volume: level(music.volume), video_volume: level(music.videoVolume) })
   const c = await getJson(`${music ? GRAPH_AUDIO : GRAPH}/${ig}/media`, { method: 'POST', headers: FORM, body: qs(body) })
   for (let i = 0; i < 40; i++) { // espera a que Instagram procese el medio
-    const s = await getJson(`${GRAPH}/${c.id}?` + qs({ fields: 'status_code', access_token: tk }))
+    const s = await getJson(`${GRAPH}/${c.id}?` + qs({ fields: 'status_code,status', access_token: tk }))
     if (s.status_code === 'FINISHED') break
-    if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') throw new HttpError(502, 'Instagram no pudo procesar el archivo')
+    if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') {
+      // «status» trae el motivo (a veces solo repite «ERROR»): se guarda para saber qué rechazó Instagram
+      console.error('Instagram rechazó el medio', JSON.stringify({ status: s.status, code: s.status_code, music: !!music, format: j.format }))
+      const why = s.status && s.status !== s.status_code ? ` (${String(s.status).slice(0, 300)})` : ''
+      const hint = music ? '. Llevaba música de Instagram: prueba con otra pista o publícalo sin música' : ''
+      throw new HttpError(502, `Instagram no pudo procesar el archivo${why}${hint}`)
+    }
     await new Promise((r) => setTimeout(r, 3000))
   }
   let p: { id?: string }
