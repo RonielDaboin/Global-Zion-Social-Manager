@@ -39,9 +39,9 @@ const maxLenOf = (platforms) => Math.min(...platforms.map((p) => PLATFORMS[p].li
 
 const base = { contentId: null, subject: '', recipients: '', igMusic: null, status: 'draft' }
 
-/** Publicación de imagen: diseño y texto como en «Crear con IA»; usa la foto de IA solo si aprobó el control de calidad. */
+/** Publicación de imagen en el «estilo Global Zion» (cleanStyle.js); usa la foto de IA solo si aprobó el control de calidad. */
 async function createImage({ id, topic, platforms, scheduledAt, withPhoto, onStep }) {
-  const r = await generateAutoPost({ text: topic, platforms, withImage: withPhoto, onStep })
+  const r = await generateAutoPost({ text: topic, platforms, withImage: withPhoto, clean: true, onStep })
   const design = r.options.photo || r.design
   const sheet = sheetFromCaption(r.caption)
   return {

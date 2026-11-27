@@ -6,6 +6,7 @@ import { generateCaptionAI, generateImageAI, generateLayerTextsAI, shrinkImage, 
 import { BG_PRESETS, BRAND, buildContent } from './brand.js'
 import { buildDesign, paintPalette, lightBottom, pickDeco, CONTACT_STYLES, DECOS } from './designs.js'
 import { vetImage } from './imageQuality.js'
+import { cleanLook, cleanContact, CLEAN_PALETTES, CLEAN_PHOTO_LAYOUTS, CLEAN_MAX_POINTS, CLEAN_PHOTO_DIM } from './cleanStyle.js'
 import { t } from './i18n.jsx'
 
 const pick = (a) => a[Math.floor(Math.random() * a.length)]
@@ -105,7 +106,7 @@ export function dominantHue(dataUrl) {
  * Intenta armar la variante con foto de IA: hasta 2 imágenes, cada una debe aprobar el filtro de píxeles y la revisión de visión.
  * Devuelve { design, why }: design es null si ninguna imagen aprobó (why = motivos del rechazo).
  */
-export async function photoVariant(base, { prompt, context, info, onStep = () => {} }) {
+export async function photoVariant(base, { prompt, context, info, clean = false, onStep = () => {} }) {
   let good = null, why = []
   try {
     for (let i = 0; i < 2 && !good; i++) {
@@ -121,6 +122,7 @@ export async function photoVariant(base, { prompt, context, info, onStep = () =>
   }
   if (!good) return { design: null, why }
   const img = await shrinkImage(good, 1080)
+  if (clean) return { why: [], design: cleanPhotoDesign(base, info, img || good) }
   // El color de acento se toma de la imagen para que combine con ella; cada foto estrena una composición distinta
   let palette = base.auto.palette
   try {
@@ -137,6 +139,16 @@ export function photoDesign(base, info, image, palette = base.auto.palette, opti
     ...look,
     bg: { ...look.bg, prompt: base.bg.prompt, scene: base.bg.scene, type: 'image', image, dim: 0.58, fx: { ...FX_DEFAULT, detail: 30, contrast: 108, saturate: 105, vignette: 28 } },
   }
+}
+
+/** Foto de fondo en el estilo exigente: se mantienen los colores de marca y la foto queda más atrás. */
+function cleanPhotoDesign(base, info, image) {
+  const was = base.auto
+  // Sobre la foto el texto va claro: una paleta clara se cambia por la azul de marca
+  const palette = was.palette.dark ? was.palette : CLEAN_PALETTES[0]
+  const layout = CLEAN_PHOTO_LAYOUTS.includes(was.layout) ? was.layout : 'browser'
+  const design = photoDesign(base, info, image, palette, { layout, logo: was.logo, contact: was.palette.dark ? was.contact : cleanContact(true) })
+  return { ...design, bg: { ...design.bg, dim: CLEAN_PHOTO_DIM } }
 }
 
 /** Foto elegida de la web como fondo: el color de acento se toma de la propia foto. */
@@ -328,7 +340,7 @@ export function retext(design, info) {
 }
 
 /** Devuelve el estado completo del Composer (misma forma que su trabajo en curso). `text` puede ir vacío. */
-export async function generateAutoPost({ text = '', platforms, withImage, onStep = () => {} }) {
+export async function generateAutoPost({ text = '', platforms, withImage, clean = false, onStep = () => {} }) {
   const userText = text.trim()
   const c = buildContent(userText)
   const link = (userText.match(URL_RE) || [])[0]?.replace(/[.,;)]+$/, '') || BRAND.site
@@ -339,7 +351,9 @@ export async function generateAutoPost({ text = '', platforms, withImage, onStep
 
   // 1 · Diseño con la paleta de Global Zion; la IA mejora la etiqueta y el título, los puntos salen de la web
   onStep(t('Eligiendo el diseño…'))
-  let kicker = c.kicker, title = c.title
+  // Estilo exigente: menos puntos y un título de un solo tema, para que la imagen respire
+  const points = clean ? c.points.slice(0, CLEAN_MAX_POINTS) : c.points
+  let kicker = c.kicker, title = clean && c.title.includes(' + ') ? c.angle.title : c.title
   onStep(t('Escribiendo los textos…'))
   if (userText) {
     try {
@@ -350,9 +364,10 @@ export async function generateAutoPost({ text = '', platforms, withImage, onStep
   }
   // Paleta: ~75 % oscuras; se varía el color para no repetir siempre el azul
   const wantDark = Math.random() < 0.75
-  const palette = Math.random() < 0.8 ? makePalette({ dark: wantDark }) : pick(PALETTES.filter((p) => p.dark === wantDark))
-  const content = { kicker, title, points: c.points, link }
-  let design = buildDesign({ info: content, palette })
+  const look = clean ? cleanLook() : null
+  const palette = look ? look.palette : Math.random() < 0.8 ? makePalette({ dark: wantDark }) : pick(PALETTES.filter((p) => p.dark === wantDark))
+  const content = { kicker, title, points, link }
+  let design = buildDesign({ info: content, ...(look || { palette }) })
 
   // 2 · Dos opciones de fondo: A) foto de IA (solo si aprueba el control de calidad) y B) hecho con las herramientas de la app
   const prompt = `${userText ? 'Idea: ' + userText.replace(URL_RE, '').trim() + '. ' : ''}Premium corporate social media background about ${c.about}:${Math.random() < 0.75 ? pick(PHOTO_SCENES) : c.scene}. Color palette: ${palette.ai}, well lit, bright mid-tones, strong contrast, sharp details, professional business look, modern, clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks, nothing readable on any screen. No people, faces or hands.`
@@ -365,7 +380,7 @@ export async function generateAutoPost({ text = '', platforms, withImage, onStep
     // Plazo total: si la imagen de IA se demora, se sigue con la opción B en vez de dejar todo cargando
     let timer
     const late = new Promise((res) => { timer = setTimeout(() => res({ design: null, why: [t('la imagen de IA tardó demasiado')] }), 150000) })
-    const r = await Promise.race([photoVariant(baseDesign, { prompt, context, info, onStep }), late]).finally(() => clearTimeout(timer))
+    const r = await Promise.race([photoVariant(baseDesign, { prompt, context, info, clean, onStep }), late]).finally(() => clearTimeout(timer))
     options.photo = r.design
     options.why = r.design ? null : r.why
   }

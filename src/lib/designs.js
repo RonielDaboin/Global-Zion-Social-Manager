@@ -231,7 +231,7 @@ export const LAYOUTS = [
 export const DECOS = ['rings', 'dots', 'grid', 'diagonal', 'waves', 'glow', 'blobs', 'logo']
 
 // Se recuerda lo usado hace poco para que las publicaciones no se repitan
-function pickFresh(key, ids, keep) {
+export function pickFresh(key, ids, keep) {
   let recent = []
   try { recent = JSON.parse(localStorage.getItem(key) || '[]') } catch { /* sin almacenamiento */ }
   let pool = ids.filter((id) => !recent.includes(id))
