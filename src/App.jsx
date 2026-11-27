@@ -9,6 +9,7 @@ import Composer from './components/Composer.jsx'
 import Posts from './components/Posts.jsx'
 import Calendar from './components/Calendar.jsx'
 import Content from './components/Content.jsx'
+import Alicia from './components/Alicia.jsx'
 import { useUsageTime } from './lib/useTime.js'
 import Profile from './components/Profile.jsx'
 import PlansModal from './components/Plans.jsx'
@@ -160,6 +161,7 @@ export default function App() {
         {page === 'profile' && <Profile onLogout={() => setAskOut(true)} />}
         <Footer />
       </main>
+      <Alicia key={session.id} onEdit={edit} />
       <PlansModal />
       {askOut && (
         <div className="modal-bg" onClick={() => setAskOut(false)}>
