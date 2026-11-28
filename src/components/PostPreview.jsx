@@ -118,6 +118,30 @@ function Email({ p, h, vurl, prov, when }) {
   )
 }
 
+/** Solo la imagen, a pantalla completa. Al tocarla se amplía sobre ese punto para revisar los detalles. */
+function ImageZoom({ src, onClose }) {
+  const [zoomed, setZoomed] = useState(false)
+  const toggle = (e) => {
+    e.stopPropagation()
+    const img = e.currentTarget
+    const box = img.parentElement
+    const r = img.getBoundingClientRect()
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height
+    setZoomed(!zoomed)
+    if (!zoomed) requestAnimationFrame(() => {
+      box.scrollLeft = img.offsetLeft + x * img.offsetWidth - box.clientWidth / 2
+      box.scrollTop = img.offsetTop + y * img.offsetHeight - box.clientHeight / 2
+    })
+  }
+  return createPortal(
+    <div className={'lightbox pv-zoom' + (zoomed ? ' zoomed' : '')} onClick={onClose} role="dialog" aria-modal="true">
+      <button type="button" className="btn ghost sm lb-close" onClick={onClose} title={t('Cerrar')} aria-label={t('Cerrar')}>✕</button>
+      <img src={src} alt="" onClick={toggle} />
+    </div>,
+    document.body,
+  )
+}
+
 export default function PostPreview({ p, onClose, actions }) {
   const { accounts, session } = useApp()
   const [vurl, setVurl] = useState(null)
@@ -130,10 +154,14 @@ export default function PostPreview({ p, onClose, actions }) {
     return () => { if (u) URL.revokeObjectURL(u) }
   }, [p.id, p.mediaType])
 
+  const [zoom, setZoom] = useState(null) // imagen abierta a pantalla completa
+  const openZoom = (e) => { if (e.target.matches('img.sim-media, img.sim-bg')) setZoom(e.target.src) }
+
   const [closing, setClosing] = useState(false)
   const close = () => { if (closing) return; setClosing(true); setTimeout(onClose, 220) }
   useEffect(() => {
-    const k = (e) => e.key === 'Escape' && close()
+    // Con la imagen ampliada, Esc cierra primero solo la imagen
+    const k = (e) => { if (e.key !== 'Escape') return; if (zoom) setZoom(null); else close() }
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   })
@@ -154,7 +182,7 @@ export default function PostPreview({ p, onClose, actions }) {
           ))}</div>
           <div className="row pv-end"><StatusTag s={p.status} /><button className="icon-btn pv-x" onClick={close} title={t('Cerrar')} aria-label={t('Cerrar')}><Icon name="x" size={20} /></button></div>
         </div>
-        <div className="sim-stage">
+        <div className="sim-stage" onClick={openZoom}>
           {tab === 'instagram' && <Instagram {...props} />}
           {tab === 'tiktok' && <TikTok {...props} />}
           {tab === 'facebook' && <Facebook {...props} />}
@@ -168,6 +196,7 @@ export default function PostPreview({ p, onClose, actions }) {
         {r && <small className="muted">{r.ok ? '✅' : '❌'} {r.demo ? t('modo demo') : ''}{r.error ? ' ' + r.error : ''}</small>}
         <small className="muted">{p.author && <>👤 {p.author.name} · </>}{t('Simulación de cómo se ve la publicación')}</small>
         {actions && <div className="row">{actions(close)}</div>}
+        {zoom && <ImageZoom src={zoom} onClose={() => setZoom(null)} />}
       </div>
     </div>,
     document.body,

@@ -72,7 +72,8 @@ Deno.serve(async (req) => {
     `- "action": "plan" si el pedido crea publicaciones nuevas o cambia el plan sin crear; "edit" si pide cambiar, publicar o programar la publicación del editor o una ya guardada; "chat" si es una pregunta, una revisión, un consejo, un saludo, algo que no puedes hacer o falta un dato imprescindible (pregunta en "reply"). "items" va vacío salvo con "plan", y "edits" vacío salvo con "edit".`,
     `- Con "edit", "edits" lleva un elemento por publicación (máximo ${MAX_ITEMS}). "target": "editor" para la del editor, o la "ref" de una guardada (solo con status draft, scheduled o failed). Si no queda claro cuál, usa la del editor si existe; si no, pregunta con "chat". Rellena SOLO los campos que cambian; los demás van como "" (o lista vacía). "description" es el texto completo nuevo, con sus saltos de línea, emojis acordes y las líneas de WhatsApp y web que ya tenga. "tags" son hashtags separados por espacios. Respeta el límite de caracteres ("maxLen") y no inventes ofertas, precios ni datos.`,
     `- PUBLICAR O PROGRAMAR lo que ya existe (en el editor o en "posts" con status draft, scheduled o failed): usa "edit" con "send": "now" si pide publicarlo (ya, ahora, al tiro, hoy sin hora) o "schedule" si pide programarlo o publicarlo a una hora (pon "date" y "time"; "en 10 minutos" se calcula desde ahora). "send" es "none" en cualquier otro caso: nunca publiques por una revisión, una pregunta o un cambio de texto. Nunca respondas que no puedes publicar ni mandes a pulsar el botón de publicar de la app, y no crees de nuevo con "plan" algo que ya existe. Si no queda claro cuál publicar, pregunta con "chat" (aun en modo autoritario: publicar la equivocada no se puede deshacer). La app publica al momento y, si no puede, la programa para unos minutos después y lo avisa.`,
-    `- No puedes cambiar la imagen ni el video, ni borrar: explica qué botón usar. Al revisar, di en concreto qué está bien y qué mejorarías (texto, ortografía, hashtags, redes, hora, imagen) y avisa de lo que falte (cuentas sin conectar, texto vacío o demasiado largo). Si una publicación falló, explica su error en palabras sencillas y cómo resolverlo.`,
+    `- RECONSTRUIR: si pide reconstruir, rehacer, rediseñar o hacer otra versión de una publicación de imagen que ya existe (o cambiar su diseño, colores o formato), usa "edit" con "rebuild": true y los demás campos vacíos ("send": "none"). La app genera la versión nueva con ese pedido y el usuario elige si la guarda: no digas que ya está cambiada. Si no queda claro cuál, pregunta con "chat". En cualquier otro caso "rebuild" es false.`,
+    `- Fuera de "rebuild" no puedes cambiar la imagen; tampoco el video, ni borrar: explica qué botón usar. Al revisar, di en concreto qué está bien y qué mejorarías (texto, ortografía, hashtags, redes, hora, imagen) y avisa de lo que falte (cuentas sin conectar, texto vacío o demasiado largo). Si una publicación falló, explica su error en palabras sencillas y cómo resolverlo.`,
     `- Con "plan", "items" es el plan COMPLETO que debe quedar (máximo ${MAX_ITEMS}). Si ajusta el plan actual, conserva igual lo que no pida cambiar. Si pide algo nuevo y distinto, reemplázalo.`,
     `- "type": "image" o "video". Los videos no se generan desde cero: la app usa videos ya subidos a Contenido. Si pide más videos de los disponibles, inclúyelos igual y avísalo en "reply".`,
     `- "date": un día de la semana significa el próximo que venga en el calendario. "Hoy" y "mañana" según la fecha actual.`,
@@ -114,8 +115,9 @@ Deno.serve(async (req) => {
                   time: { type: 'STRING' },
                   networks: { type: 'ARRAY', items: { type: 'STRING' } },
                   send: { type: 'STRING', enum: ['none', 'now', 'schedule'] },
+                  rebuild: { type: 'BOOLEAN' },
                 },
-                required: ['target', 'title', 'description', 'tags', 'date', 'time', 'networks', 'send'],
+                required: ['target', 'title', 'description', 'tags', 'date', 'time', 'networks', 'send', 'rebuild'],
               },
             },
             reply: { type: 'STRING' },
@@ -182,13 +184,14 @@ Deno.serve(async (req) => {
   const edits = (Array.isArray(out.edits) ? out.edits : []).slice(0, MAX_ITEMS).map((x) => ({
     target: line(x?.target, 10),
     send: x?.send === 'now' || x?.send === 'schedule' ? x.send : '',
+    rebuild: x?.rebuild === true,
     title: line(x?.title, 200),
     description: text(x?.description, 5000),
     tags: line(x?.tags, 600),
     date: line(x?.date, 10),
     time: line(x?.time, 5),
     networks: (Array.isArray(x?.networks) ? x.networks : []).map(String).filter((n: string) => NETWORKS.includes(n)),
-  })).filter((x) => x.target && (x.send || x.title || x.description || x.tags || x.date || x.time || x.networks.length))
+  })).filter((x) => x.target && (x.rebuild || x.send || x.title || x.description || x.tags || x.date || x.time || x.networks.length))
   if (!reply && !items.length && !edits.length) return json({ error: 'Gemini no devolvió una respuesta (puede haber bloqueado el contenido)' }, 502)
   const action = out.action === 'plan' && items.length ? 'plan' : out.action === 'edit' && edits.length ? 'edit' : 'chat'
   // Si la IA no lo deja claro, nunca se publica al instante

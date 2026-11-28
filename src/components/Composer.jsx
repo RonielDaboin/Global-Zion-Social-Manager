@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS, accountLabel, blankDesign, designFormats, getFormat, uid } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
@@ -20,6 +20,7 @@ import { composeCaption, normalizeTags, initialSheet, sheetFromCaption, withCont
 import { planFor, aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { LockTag } from './Plans.jsx'
 import { editorBridge } from '../lib/aliciaHelp.js'
+import { readInfo } from '../lib/designInfo.js'
 
 const toLocalInput = (ts) => {
   const d = new Date(ts - new Date().getTimezoneOffset() * 60000)
@@ -66,6 +67,8 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
   const [when, setWhen] = useState(w?.when || (draft?.scheduledAt ? toLocalInput(draft.scheduledAt) : toLocalInput(Date.now() + 3600e3)))
   const [tone, setTone] = useState(w?.tone || DEFAULT_TONE)
   const [autoOpen, setAutoOpen] = useState(null) // «Crear con IA»: null | 'choose' | 'image' | 'video'
+  const [quick, setQuick] = useState(null) // «Edición rápida»: lo que había en el editor al abrirla
+  const quickReady = useMemo(() => !!readInfo(design), [design])
   const titleRef = useRef(null)
   const descRef = useRef(null)
   const [emojiField, setEmojiField] = useState('description') // dónde inserta el botón de emojis (el último campo usado)
@@ -248,6 +251,8 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
       return url ? shrinkImage(url) : null
     },
     apply: (next) => { setSheet(next.sheet); setPlatforms(next.platforms); setWhen(next.when) },
+    design: () => ({ design, caption, platforms, mediaType }),
+    applyDesign: (next, nextSheet) => { setDesign(next); if (nextSheet) setSheet(nextSheet) },
     // Alicia va a publicar o programar lo del editor: se valida igual que con los botones y se entrega lista
     prepare: async () => {
       if (!validate(true)) return { error: t('Falta algo en el editor para poder publicarla: mira el aviso.') }
@@ -259,10 +264,18 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
     },
   }
   useEffect(() => {
-    const api = Object.fromEntries(['snapshot', 'image', 'apply', 'prepare'].map((k) => [k, (...args) => bridge.current[k](...args)]))
+    const api = Object.fromEntries(['snapshot', 'image', 'apply', 'design', 'applyDesign', 'prepare'].map((k) => [k, (...args) => bridge.current[k](...args)]))
     editorBridge.current = api
     return () => { if (editorBridge.current === api) editorBridge.current = null }
   }, [])
+
+  const openQuick = () => (lim.autoPost ? setQuick({ design, caption, platforms }) : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))
+  const applyQuick = (r) => {
+    setDesign(r.design)
+    if (r.caption !== quick.caption) setSheet(sheetFromCaption(r.caption))
+    setQuick(null)
+    notify(t('Nueva versión aplicada. Revísala y guarda, programa o publica.'))
+  }
 
   const editSheet = (patch) => setSheet((cur) => ({ ...cur, ...patch }))
   const copy = (text) => { navigator.clipboard?.writeText(text); notify(t('Texto copiado')) }
@@ -285,6 +298,7 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
         </div></header>
       {autoOpen === 'choose' && <AutoChoice onClose={() => setAutoOpen(null)} onImage={() => setAutoOpen('image')} onVideo={() => setAutoOpen('video')} />}
       {autoOpen === 'image' && <AutoPost onClose={() => setAutoOpen(null)} onGenerated={applyAuto} />}
+      {quick && <AutoPost initial={quick} onClose={() => setQuick(null)} onGenerated={applyQuick} />}
       {/* El video se abre como publicación aparte: el trabajo que había en el editor se conserva */}
       {autoOpen === 'video' && <AutoVideo onClose={() => setAutoOpen(null)} onBack={() => setAutoOpen('choose')} onReady={(d) => { setAutoOpen(null); onOpen(d) }} />}
 
@@ -302,6 +316,12 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
         {isVideo
           ? <VideoEditor file={videoFile} setFile={setVideoFile} video={video} setVideo={setVideo} platforms={platforms} notify={notify} maxMB={lim.videoMB} />
           : <>
+            {quickReady && (
+              <div className="quick-bar">
+                <button type="button" className="btn primary sm" onClick={openQuick}>⚡ {t('Edición rápida')}{!lim.autoPost && <LockTag plan="PREMIUM" />}</button>
+                <small className="muted">{t('Formatos, barras, colores y el asistente, como al crear con IA.')}</small>
+              </div>
+            )}
             <ImageEditor design={design} setDesign={setDesign} />
             <MusicStudio design={design} lim={lim} maxMB={lim.videoMB || 100} notify={notify}
               onLocked={(msg) => openPlans(msg || t('La animación con música está disponible desde el plan PRO.'))}

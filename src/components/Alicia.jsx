@@ -1,7 +1,8 @@
 // Alicia: la asistente de la app. Se le pide en palabras («2 imágenes y 1 video el lunes y el martes»), propone un plan,
 // crea las publicaciones como borradores y las programa solo cuando el usuario lo confirma.
 // Está siempre montada: sigue trabajando aunque se cierre el panel o se cambie de sección.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS, uid } from '../lib/formats.js'
 import { askAlicia, createPost, pickIgMusic } from '../lib/aliciaCreate.js'
@@ -12,11 +13,15 @@ import { contentUse } from '../lib/contentDraft.js'
 import { ANGLES } from '../lib/brand.js'
 import { aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { appContext, editorBridge, planEdit, editSavedPost, toWhen, EDITABLE } from '../lib/aliciaHelp.js'
-import { initialSheet } from '../lib/postSheet.js'
+import { composeCaption, sheetFromCaption, initialSheet } from '../lib/postSheet.js'
+import { canQuickEdit } from '../lib/designInfo.js'
+import { renderToDataURL } from '../lib/render.js'
+import AutoPost from './AutoPost.jsx'
 import { useSpeech } from '../lib/useSpeech.js'
 import { t, useLang, getLang, locale } from '../lib/i18n.jsx'
 import { Icon, PlatformLogo, StatusTag } from './ui.jsx'
 import AiOrb from './AiOrb.jsx'
+import PostPreview from './PostPreview.jsx'
 
 const AUTO_SEND_KEY = 'gz_voice_autosend'
 const CINE_KEY = 'gz_alicia_cine'
@@ -133,7 +138,7 @@ function VideoPick({ videos, value, disabled, onChange }) {
   )
 }
 
-function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
+function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit, onQuick }) {
   const video = it.type === 'video' ? videos?.find((v) => v.id === it.contentId) : null
   const created = !!it.postId
   const editableDate = !created || post?.status === 'draft'
@@ -143,10 +148,21 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
   const time = at ? timeString(at) : it.time
   const thumb = post?.image || video?.thumb
   const networks = post?.platforms || it.platforms
+  const [viewing, setViewing] = useState(false)
+  const quick = useMemo(() => canQuickEdit(post), [post?.design, post?.mediaType]) // eslint-disable-line react-hooks/exhaustive-deps
+  // La tarjeta de una publicación creada abre su vista previa, salvo al usar sus controles
+  const view = (e) => {
+    // La vista previa y el calendario son portales: sus clics también llegan aquí
+    if (!e.currentTarget.contains(e.target) || e.target.closest('button, input, label')) return
+    setViewing(true)
+  }
+  const picture = thumb ? <img src={thumb} alt="" /> : it.type === 'video' ? '🎬' : '🖼️'
   return (
-    <li className={'ali-item' + (working ? ' working' : '')}>
+    <li className={'ali-item' + (working ? ' working' : '') + (post ? ' can-view' : '')} onClick={post ? view : undefined}>
       <div className="ali-item-top">
-        <span className="ali-thumb" aria-hidden="true">{thumb ? <img src={thumb} alt="" /> : it.type === 'video' ? '🎬' : '🖼️'}</span>
+        {post
+          ? <button type="button" className="ali-thumb" onClick={() => setViewing(true)} title={t('Vista previa')} aria-label={t('Vista previa')}>{picture}</button>
+          : <span className="ali-thumb" aria-hidden="true">{picture}</span>}
         <div className="ali-item-info">
           <b>{it.type === 'video' ? t('Video') : t('Imagen')} · {dayLabel(date)}</b>
           <span className="ali-nets">{networks.map((p) => <span key={p} title={PLATFORMS[p].name}><PlatformLogo id={p} size={14} /></span>)}</span>
@@ -171,8 +187,12 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit }) {
       {post && <p className="ali-cap">{post.caption}</p>}
       {it.error && <p className="ali-warn">❌ {it.error}</p>}
       {post && !['published', 'publishing'].includes(post.status) && (
-        <button type="button" className="btn ghost sm" disabled={busy} onClick={() => onEdit(post)}><Icon name="edit" size={13} /> {t('Ver y editar')}</button>
+        <div className="ali-item-btns">
+          <button type="button" className="btn ghost sm" disabled={busy} onClick={() => onEdit(post)}><Icon name="edit" size={13} /> {t('Ver y editar')}</button>
+          {quick && <button type="button" className="btn primary sm" disabled={busy} onClick={() => onQuick(post)}>⚡ {t('Edición rápida')}</button>}
+        </div>
       )}
+      {viewing && post && <PostPreview p={post} onClose={() => setViewing(false)} />}
     </li>
   )
 }
@@ -182,7 +202,7 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
   const v = ed.values
   const name = ed.target === 'editor' ? t('La publicación del editor') : post ? initialSheet(post.sheet, post.caption).title || post.caption.slice(0, 60) : t('Esta publicación ya no está.')
   return (
-    <li className={'ali-item ali-change' + (ed.before || ed.sent ? ' done' : '')}>
+    <li className={'ali-item ali-change' + (ed.before || ed.sent || ed.rebuilt ? ' done' : '')}>
       <div className="ali-item-top">
         <span className="ali-thumb" aria-hidden="true">{post?.image ? <img src={post.image} alt="" /> : '✏️'}</span>
         <div className="ali-item-info">
@@ -192,13 +212,19 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
         <button type="button" className="icon-btn" disabled={busy} onClick={onRemove} title={t('Quitar')} aria-label={t('Quitar')}><Icon name="x" size={15} /></button>
       </div>
       <dl>
+        {v.rebuild && <div><dt>{t('Acción')}</dt><dd>{t('Reconstruir la imagen')}</dd></div>}
         {v.send && <div><dt>{t('Acción')}</dt><dd>{v.send === 'now' ? t('Publicar ahora') : t('Programar')}</dd></div>}
         {FIELDS.filter(([k]) => v[k]).map(([k, label]) => <div key={k}><dt>{t(label)}</dt><dd>{v[k]}</dd></div>)}
         {v.networks.length > 0 && <div><dt>{t('Redes')}</dt><dd>{v.networks.map((p) => PLATFORMS[p]?.name || p).join(', ')}</dd></div>}
         {(v.date || v.time) && <div><dt>{t('Fecha')}</dt><dd>{[v.date, v.time].filter(Boolean).join(' · ')}</dd></div>}
       </dl>
       {ed.error && <p className="ali-warn">❌ {ed.error}</p>}
-      {ed.sent ? (
+      {v.rebuild ? (
+        <div className="ali-change-act">
+          {ed.rebuilt && <span className="ali-done">✅ {ed.inEditor ? t('Aplicado en el editor: revisa y guarda, programa o publica.') : t('Cambio guardado.')}</span>}
+          <button type="button" className={'btn sm ' + (ed.rebuilt ? 'ghost' : 'primary')} disabled={busy} onClick={onApply}>🔁 {ed.rebuilt ? t('Reconstruir otra vez') : t('Ver la nueva versión')}</button>
+        </div>
+      ) : ed.sent ? (
         <div className="ali-change-act"><span className="ali-done">✅ {ed.sent === 'now' ? t('Enviada a publicar.') : t('Quedó programada.')}</span></div>
       ) : ed.before ? (
         <div className="ali-change-act">
@@ -234,6 +260,7 @@ export default function Alicia({ page, onEdit }) {
   const fold = (name) => setFolded((f) => ({ ...f, [name]: !f[name] }))
   const [watch, setWatch] = useState(() => read(storeKey).watch || []) // lo que lanzó sola y aún no termina
   const [thinking, setThinking] = useState(false)
+  const [quick, setQuick] = useState(null) // edición rápida abierta: { target, editKey, initial }
   const [progress, setProgress] = useState(null) // { key, n, total, step } mientras se crean
   const [videos, setVideos] = useState(null) // videos libres de Contenido; null = sin cargar
   const stop = useRef(false)
@@ -323,7 +350,8 @@ export default function Alicia({ page, onEdit }) {
       const clean = r.action === 'plan' ? cleanItems(r.items) : []
       const proposed = (r.action === 'edit' ? r.edits || [] : []).map(({ target, ...values }) => ({
         key: uid(), target: target === 'editor' ? (editor ? 'editor' : null) : refs[target], editorId: editor?.id,
-        values: { ...values, networks: values.networks || [] },
+        // Una versión nueva siempre la elige el usuario: nunca se publica ni se programa junto con ella
+        values: { ...values, networks: values.networks || [], ...(values.rebuild ? { title: '', description: '', tags: '', date: '', time: '', networks: [], send: '', request: message } : {}) },
       })).filter((e) => e.target)
       if (r.action === 'edit' && !proposed.length) throw new Error(t('No supe qué publicación cambiar. Dime cuál es.'))
       if (r.action === 'plan' && !clean.length) throw new Error(t('No entendí las fechas. Dime los días de otra forma.'))
@@ -334,7 +362,9 @@ export default function Alicia({ page, onEdit }) {
       if (proposed.length) {
         setEdits(proposed)
         setFolded((f) => ({ ...f, edits: false }))
-        if (free_) job = async () => { for (const e of proposed) await apply(e) }
+        const redo = proposed.find((e) => e.values.rebuild) // la versión nueva se abre sola
+        if (free_) job = async () => { for (const e of proposed) if (!e.values.rebuild) await apply(e); if (redo) apply(redo) }
+        else if (redo) job = () => apply(redo)
       }
       // Sin `return` aquí: lo que haya que hacer sola (`job`) se ejecuta al final, también si solo son cambios
       if (clean.length) {
@@ -533,11 +563,11 @@ export default function Alicia({ page, onEdit }) {
     return live && live.id === (ed.target === 'editor' ? ed.editorId : ed.target) ? live : null
   }
   // Lo que el editor tiene a medio hacer de una publicación guardada se actualiza igual, para que no tape el cambio
-  const patchWip = (post) => {
+  const patchWip = (post, extra = {}) => {
     const key = `gz_wip_${session.id}_${post.id}`
     try {
       const wip = JSON.parse(localStorage.getItem(key))
-      if (wip) localStorage.setItem(key, JSON.stringify({ ...wip, sheet: post.sheet, caption: post.caption, platforms: post.platforms, ...(post.scheduledAt ? { when: toWhen(post.scheduledAt) } : {}) }))
+      if (wip) localStorage.setItem(key, JSON.stringify({ ...wip, sheet: post.sheet, caption: post.caption, platforms: post.platforms, ...(post.scheduledAt ? { when: toWhen(post.scheduledAt) } : {}), ...extra }))
     } catch { /* ignore */ }
   }
   /** Publica o programa una publicación que ya existe (la del editor o una guardada). */
@@ -592,7 +622,50 @@ export default function Alicia({ page, onEdit }) {
     }
   }
 
+  /** Abre la edición rápida de la publicación `target` (con `request`, la IA reconstruye una versión). */
+  const openQuick = (target, request = '', editKey = null) => {
+    const live = editorBridge.current?.snapshot()
+    const inEditor = !!live && live.id === target
+    const post = postsRef.current.find((p) => p.id === target)
+    const from = inEditor ? editorBridge.current.design() : post
+    const error = !from ? t('Esta publicación ya no está.')
+      : !inEditor && !EDITABLE.includes(post.status) ? t('Esa publicación ya no se puede cambiar.')
+        : !canQuickEdit(from) ? t('Esta imagen no admite edición rápida: ábrela con «Ver y editar».') : null
+    if (editKey) markEdit(editKey, { error })
+    if (error) return say('err', error)
+    return setQuick({ target, editKey, initial: { design: from.design, caption: from.caption, platforms: from.platforms, request } })
+  }
+  /** Guarda la versión elegida: en el editor si la publicación está abierta, y si no, en la publicación guardada. */
+  const saveQuick = async (r) => {
+    const { target, editKey, initial } = quick
+    setQuick(null)
+    try {
+      const sheet = r.caption !== initial.caption ? sheetFromCaption(r.caption) : null
+      const live = editorBridge.current?.snapshot()
+      const inEditor = !!live && live.id === target
+      if (inEditor) editorBridge.current.applyDesign(r.design, sheet)
+      else {
+        const image = await renderToDataURL(r.design)
+        const post = postsRef.current.find((p) => p.id === target)
+        if (!post || !EDITABLE.includes(post.status)) throw new Error(t('Esa publicación ya no se puede cambiar.'))
+        const maxLen = Math.min(...(post.platforms.length ? post.platforms : ['instagram']).map((p) => PLATFORMS[p].limit))
+        const caption = sheet ? composeCaption(sheet) : post.caption
+        if (caption.length > maxLen) throw new Error(t('El texto supera el límite de {n} caracteres', { n: maxLen }))
+        const next = { ...post, design: r.design, format: r.design.format, image, ...(sheet ? { sheet, caption } : {}) }
+        savePost(next)
+        postsRef.current = postsRef.current.map((p) => (p.id === next.id ? next : p))
+        patchWip(next, { design: next.design })
+      }
+      if (editKey) markEdit(editKey, { error: null, rebuilt: true, inEditor })
+      say('ai', inEditor ? t('✨ Puse la nueva versión en el editor: revisa y guarda, programa o publica.') : t('✨ Guardé la nueva versión de la publicación.'))
+    } catch (e) {
+      if (editKey) markEdit(editKey, { error: e.message })
+      say('err', e.message)
+    }
+  }
+
   const apply = (ed) => {
+    if (ed.values.rebuild) return openQuick(ed.target === 'editor' ? ed.editorId : ed.target, ed.values.request, ed.key)
     if (ed.sent) return undefined
     if (ed.values.send) return sendPost(ed)
     const live = editorFor(ed)
@@ -723,7 +796,7 @@ export default function Alicia({ page, onEdit }) {
                 {items.map((it) => (
                   <Item key={it.key} it={it} post={postOf(it)} videos={videos} busy={busy} working={progress?.key === it.key}
                     onChange={(value) => change(it, value)} onRemove={() => setItems((l) => l.filter((x) => x.key !== it.key))}
-                    onEdit={(post) => { setOpen(false); onEdit(post) }} />
+                    onEdit={(post) => { setOpen(false); onEdit(post) }} onQuick={(post) => openQuick(post.id)} />
                 ))}
               </ul>
             </div>
@@ -768,6 +841,7 @@ export default function Alicia({ page, onEdit }) {
           {voice.supported && <label className="ali-check"><input type="checkbox" checked={autoSend} onChange={(e) => toggleAutoSend(e.target.checked)} /> {t('Enviar al terminar de hablar')}</label>}
         </form>
       </section>
+      {quick && createPortal(<AutoPost key={quick.target + quick.initial.request} initial={quick.initial} onClose={() => setQuick(null)} onGenerated={saveQuick} />, document.body)}
     </div>
   )
 }

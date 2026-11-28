@@ -576,6 +576,11 @@ h3.sub { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; colo
 .lightbox { position: fixed; inset: 0; z-index: 100; background: #000d; backdrop-filter: blur(6px); display: grid; place-items: center; padding: 24px; animation: fadein .15s; }
 .lightbox img { max-width: 94vw; max-height: 92vh; border-radius: 14px; box-shadow: 0 30px 80px #000; }
 .lb-close { position: absolute; top: 16px; right: 16px; }
+.post-modal .sim-stage img.sim-media, .post-modal .sim-stage img.sim-bg { cursor: zoom-in; }
+.pv-zoom .lb-close { position: fixed; top: max(16px, env(safe-area-inset-top)); background: #000a; color: #fff; }
+.pv-zoom img { cursor: zoom-in; }
+.pv-zoom.zoomed { display: flex; overflow: auto; padding: 0; overscroll-behavior: contain; }
+.pv-zoom.zoomed img { flex: none; margin: auto; width: min(1400px, 220vw); max-width: none; max-height: none; border-radius: 0; cursor: zoom-out; }
 @keyframes fadein { from { opacity: 0 } }
 
 /* Mesa de trabajo: contrasta con el fondo de la web */
@@ -2662,6 +2667,9 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .ali-item-top { display: flex; gap: 11px; align-items: flex-start; }
 .ali-thumb { flex: none; width: 58px; height: 58px; border-radius: 14px; overflow: hidden; display: grid; place-items: center; font-size: 25px; background: linear-gradient(135deg, #3b92e033, #c2339b2e); }
 .ali-thumb img { width: 100%; height: 100%; object-fit: cover; }
+button.ali-thumb { padding: 0; border: 0; color: inherit; cursor: pointer; }
+.ali-item.can-view { cursor: pointer; }
+.ali-item.can-view .ali-when:disabled { pointer-events: none; } /* el clic pasa a la tarjeta y abre la vista previa */
 .ali-item-info { flex: 1; min-width: 0; display: grid; gap: 4px; justify-items: start; }
 .ali-item-info b { font-size: 13.5px; }
 .ali-item-info b::first-letter { text-transform: uppercase; }
@@ -2671,6 +2679,8 @@ button, .btn, .chip, .nav, .seg button, .icon-btn, select, summary, label.file {
 .ali-cap { max-height: 76px; overflow-y: auto; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ali-warn { font-size: 12.5px; color: var(--red); overflow-wrap: anywhere; }
 .ali-item > .btn { justify-self: start; }
+.ali-item-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 
 .ali-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--card) 78%, transparent); }
 .ali-actions > .btn.primary, .ali-actions > .btn.blue { flex: 1 1 160px; min-height: 46px; border-radius: 14px; }

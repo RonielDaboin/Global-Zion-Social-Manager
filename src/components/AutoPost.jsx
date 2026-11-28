@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../lib/store.jsx'
 import { PLATFORMS } from '../lib/formats.js'
 import { renderToDataURL } from '../lib/render.js'
-import { generateAutoPost, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle, smartColors, smartFooter } from '../lib/autoPost.js'
+import { generateAutoPost, reopenAutoPost, rebuildDesign, photoVariant, webPhotoVariant, toolsVariant, makePalette, retext, restyle, smartColors, smartFooter } from '../lib/autoPost.js'
+import { readInfo } from '../lib/designInfo.js'
 import { LAYOUTS, DECOS, CONTACT_STYLES, saveContactStyle } from '../lib/designs.js'
 import { searchWebPhotos, loadWebPhoto } from '../lib/webImages.js'
 import { refinePostAI } from '../lib/social.js'
@@ -108,7 +109,11 @@ function Tools({ design, disabled, onChange }) {
   )
 }
 
-export default function AutoPost({ onClose, onGenerated }) {
+/**
+ * «Crear con IA». Con `initial` = { design, caption, platforms, request? } abre la edición rápida de una publicación que
+ * ya existe; si trae `request`, la IA reconstruye además una versión nueva. La versión original queda en «Anteriores».
+ */
+export default function AutoPost({ onClose, onGenerated, initial = null }) {
   const { accounts, notify, session, access } = useApp()
   useLang()
   const [text, setText] = useState('')
@@ -191,8 +196,12 @@ export default function AutoPost({ onClose, onGenerated }) {
   const hasA = !failA && !!histA[selA]
   const side = target === 'a' && hasA ? 'a' : 'b'
 
+  // En la edición rápida las versiones conservan los formatos que tenía la publicación
+  const keepFormat = (design) => (initial ? { ...design, format: initial.design.format, ...(initial.design.formats ? { formats: initial.design.formats } : {}) } : design)
+
   // Agrega una versión nueva a una opción (las anteriores quedan en la tira para volver atrás)
-  const push = async (to, design, lists = { a: histA, b: histB }) => {
+  const push = async (to, made, lists = { a: histA, b: histB }) => {
+    const design = keepFormat(made)
     const item = { id: Date.now(), design, url: await preview(design) }
     const next = [...lists[to], item]
     lists[to] = next
@@ -255,7 +264,7 @@ export default function AutoPost({ onClose, onGenerated }) {
       if (textChanged) {
         const redo = (list) => Promise.all(list.map(async (it) => {
           const design = retext(it.design, info)
-          return { ...it, design, url: await preview(design) }
+          return { ...it, original: false, design, url: await preview(design) }
         }))
         const [a, b] = await Promise.all([redo(histA), redo(histB)])
         lists = { a, b }
@@ -293,7 +302,82 @@ export default function AutoPost({ onClose, onGenerated }) {
       return reply
     } finally { setBusyChat(false) }
   }
-  const choose = (design) => { const { options, ...rest } = snap; onGenerated({ ...rest, design }) }
+  // La versión original, sin tocar, conserva también su texto
+  const choose = (item) => { const { options, ...rest } = snap; onGenerated({ ...rest, design: item.design, ...(item.original ? { caption: initial.caption } : {}) }) }
+
+  /** Pide a la IA otra versión de la publicación. Sin IA (límite o error) igual cambia la composición. */
+  const rebuild = async (opened, current) => {
+    const o = opened.options
+    const { kicker, title, points, link } = o.info
+    let r = null
+    try {
+      const limit = access.limits.aiTextPerDay
+      if (aiTextUsed(session?.id) >= limit) throw new Error(t('Llegaste al límite de {n} textos con IA de hoy.', { n: limit }))
+      const { auto, bg } = current
+      r = await refinePostAI({
+        message: `Reconstruye esta publicación: crea una versión nueva, con otro formato de diseño. Pedido: ${initial.request}`.slice(0, 1200),
+        history: [], kicker, title, points, link, caption: opened.caption,
+        maxLen: Math.min(...(opened.platforms.length ? opened.platforms : ['instagram']).map((p) => PLATFORMS[p].limit)),
+        design: { layout: auto.layout, mode: auto.palette.dark ? 'dark' : 'light', accent: auto.palette.accent, logo: auto.logo, deco: bg.deco?.type || 'none', photo: auto.photo },
+        layouts: LAYOUTS.map(({ id, name, desc }) => ({ id, name, desc })),
+        decos: DECOS,
+      })
+      aiTextBump(session?.id)
+    } catch (e) { notify(t('No se pudo usar la IA: {e}', { e: e.message }) + ' · ' + t('Cambié solo el diseño.'), 'err') }
+    const info = r ? { ...o.info, kicker: r.kicker, title: r.title, points: r.points, link: r.link || link } : o.info
+    const change = {}
+    if (r) {
+      for (const key of ['layout', 'mode', 'logo', 'deco']) if (r[key]) change[key] = r[key]
+      if (change.layout === current.auto.layout) delete change.layout // una versión nueva estrena formato
+      if (r.hue >= 0) change.hue = r.hue
+      if (r.photo === 'remove') change.removePhoto = true
+    }
+    let design = rebuildDesign(current, info, change)
+    if (r?.photo === 'ai' && r.photoQuery) {
+      const prompt = `${r.photoQuery}. Premium corporate social media background, well lit, sharp details, modern and clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks. No people, faces or hands.`
+      const made = await photoVariant(design, { prompt, context: o.context, info })
+      if (made.design) design = made.design
+      else notify(t('No se obtuvo una imagen de buena calidad ({r}).', { r: made.why.join(', ') || t('sin detalle') }), 'err')
+    }
+    return { design: keepFormat(design), snap: { ...opened, caption: r?.caption || opened.caption, options: { ...o, info } } }
+  }
+
+  const alive = useRef(true)
+  const opening = useRef(false)
+  const open = async () => {
+    try {
+      const texts = readInfo(initial.design)
+      if (!texts) throw new Error(t('Esta imagen no admite edición rápida: ábrela con «Ver y editar».'))
+      const opened = reopenAutoPost(initial, texts)
+      const first = initial.design.auto.photo ? 'a' : 'b'
+      const lists = { a: [], b: [] }
+      const add = async (to, design, extra) => lists[to].push({ id: lists[to].length + 1, design, url: await preview(design), ...extra })
+      await add(first, initial.design, { original: true })
+      // La opción B (sin foto) siempre tiene con qué trabajar
+      if (first === 'a') await add('b', keepFormat(opened.options.base))
+      let next = opened, chosen = first
+      if (initial.request) {
+        const made = await rebuild(opened, initial.design)
+        next = made.snap
+        chosen = made.design.auto.photo ? 'a' : 'b'
+        await add(chosen, made.design)
+      }
+      if (!alive.current) return
+      setHistA(lists.a); setSelA(lists.a.length - 1); setFailA(null)
+      setHistB(lists.b); setSelB(Math.max(0, lists.b.length - 1))
+      setTarget(chosen)
+      setSnap(next)
+    } catch (e) {
+      if (!alive.current) return
+      notify(e?.message || String(e), 'err')
+      onClose()
+    }
+  }
+  useEffect(() => {
+    alive.current = true
+    if (initial && !opening.current) { opening.current = true; open() }
+    return () => { alive.current = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (snap) {
     const curA = failA ? null : histA[selA]
@@ -304,7 +388,7 @@ export default function AutoPost({ onClose, onGenerated }) {
     return (
       <div className="modal-bg">
         <div className="modal auto-post auto-pick">
-          <h3>✨ {t('Elige y ajusta tu publicación')}</h3>
+          <h3>✨ {initial ? t('Edición rápida') : t('Elige y ajusta tu publicación')}</h3>
           <p className="hint">{t('Trabaja con el asistente y, cuando te guste, pulsa «Usar esta».')}</p>
           <div className="pick-work">
             <div className="pick-grid">
@@ -315,7 +399,7 @@ export default function AutoPost({ onClose, onGenerated }) {
                     : curA ? <img src={curA.url} alt="" />
                     : <p className="hint">{failA ? t('No se obtuvo una imagen de buena calidad ({r}).', { r: why }) : t('Aún sin foto. Crea una con IA o pide fotos de la web al asistente.')}</p>}
                 </div>
-                {curA && <button className="btn primary" disabled={working} onClick={() => choose(curA.design)}>{t('Usar esta')}</button>}
+                {curA && <button className="btn primary" disabled={working} onClick={() => choose(curA)}>{t('Usar esta')}</button>}
                 {curA && <Tools design={curA.design} disabled={working} onChange={(c) => tweak('a', c)} />}
                 <button className={'btn' + (curA ? ' ghost sm' : '')} disabled={working} onClick={tryAgain}>🔄 {t(histA.length ? 'Probar otra imagen' : 'Crear imagen con IA')}</button>
                 <History items={histA} sel={failA ? -1 : selA} disabled={working} onSel={(i) => { setSelA(i); setFailA(null); setTarget('a') }} />
@@ -323,7 +407,7 @@ export default function AutoPost({ onClose, onGenerated }) {
               <div className={'pick-card' + (side === 'b' ? ' sel' : '')}>
                 <span className="pick-tag">B · {t('Fondo con las herramientas de la app')}</span>
                 <div className="pick-img">{curB && !busyB ? <img src={curB.url} alt="" /> : <span className="ws-spin" style={SPIN} />}</div>
-                <button className="btn primary" disabled={working} onClick={() => choose(curB.design)}>{t('Usar esta')}</button>
+                <button className="btn primary" disabled={working} onClick={() => choose(curB)}>{t('Usar esta')}</button>
                 {curB && <Tools design={curB.design} disabled={working} onChange={(c) => tweak('b', c)} />}
                 <button className="btn ghost sm" disabled={working} onClick={reTools}>🔄 {t('Probar otro diseño')}</button>
                 <History items={histB} sel={selB} disabled={working} onSel={(i) => { setSelB(i); setTarget('b') }} />
@@ -339,6 +423,18 @@ export default function AutoPost({ onClose, onGenerated }) {
             </div>
           </div>
           <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn ghost" onClick={onClose}>{t('Cancelar')}</button></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (initial) {
+    return (
+      <div className="modal-bg">
+        <div className="modal auto-post">
+          <h3>✨ {t('Edición rápida')}</h3>
+          <div className="auto-step" role="status"><span className="ws-spin" style={SPIN} /> {initial.request ? t('La IA está reconstruyendo tu publicación…') : t('Preparando las opciones…')}</div>
+          <div className="row auto-foot"><button type="button" className="btn ghost" onClick={onClose}>{t('Cancelar')}</button></div>
         </div>
       </div>
     )

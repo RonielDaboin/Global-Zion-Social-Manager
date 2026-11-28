@@ -339,6 +339,35 @@ export function retext(design, info) {
   return { ...design, layers: buildDesign({ info, palette, layout, photo, logo, contact, foot, deco: null }).layers }
 }
 
+const backgroundPrompt = (idea, c, palette) => `${idea ? 'Idea: ' + idea + '. ' : ''}Premium corporate social media background about ${c.about}:${Math.random() < 0.75 ? pick(PHOTO_SCENES) : c.scene}. Color palette: ${palette.ai || makePalette({ hue: palette.hue }).ai}, well lit, bright mid-tones, strong contrast, sharp details, professional business look, modern, clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks, nothing readable on any screen. No people, faces or hands.`
+
+/**
+ * Prepara una publicación ya creada para la edición rápida: lo mismo que deja `generateAutoPost`, partiendo de su diseño.
+ * `texts` son sus textos (ver designInfo.js).
+ */
+export function reopenAutoPost({ design, caption, platforms }, texts) {
+  const topic = design.bg.prompt || texts.title
+  const info = { ...texts, prompt: topic, scene: design.bg.scene, palette: design.auto.palette.id, hue: design.auto.palette.hue }
+  const base = design.auto.photo ? restyle(design, info, { removePhoto: true }) : design
+  const prompt = backgroundPrompt(topic, buildContent(topic), design.auto.palette)
+  return { caption, platforms, options: { photo: null, why: null, base, prompt, context: topic, info } }
+}
+
+/**
+ * Otra versión de una publicación: composición nueva (y, sin foto, colores nuevos) del estilo exigente.
+ * `change` son los cambios de diseño que haya pedido la IA (ver `restyle`) y mandan sobre lo elegido al azar.
+ */
+export function rebuildDesign(design, info, change = {}) {
+  const was = design.auto
+  const keepsPhoto = was.photo && !change.removePhoto
+  const look = cleanLook()
+  const layout = change.layout || (keepsPhoto ? pick(CLEAN_PHOTO_LAYOUTS.filter((id) => id !== was.layout)) : look.layout)
+  if (keepsPhoto) return restyle(design, info, { ...change, layout })
+  const from = { ...design, auto: { ...was, photo: false, palette: look.palette }, bg: { type: 'gradient', image: null, prompt: design.bg.prompt, scene: design.bg.scene } }
+  const { removePhoto, ...asked } = change
+  return restyle(from, info, { logo: look.logo, contact: look.contact, deco: look.deco || 'none', ...asked, layout })
+}
+
 /** Devuelve el estado completo del Composer (misma forma que su trabajo en curso). `text` puede ir vacío. */
 export async function generateAutoPost({ text = '', platforms, withImage, clean = false, onStep = () => {} }) {
   const userText = text.trim()
@@ -370,7 +399,7 @@ export async function generateAutoPost({ text = '', platforms, withImage, clean 
   let design = buildDesign({ info: content, ...(look || { palette }) })
 
   // 2 · Dos opciones de fondo: A) foto de IA (solo si aprueba el control de calidad) y B) hecho con las herramientas de la app
-  const prompt = `${userText ? 'Idea: ' + userText.replace(URL_RE, '').trim() + '. ' : ''}Premium corporate social media background about ${c.about}:${Math.random() < 0.75 ? pick(PHOTO_SCENES) : c.scene}. Color palette: ${palette.ai}, well lit, bright mid-tones, strong contrast, sharp details, professional business look, modern, clean, empty space for text. Absolutely no text, letters, numbers, logos or watermarks, nothing readable on any screen. No people, faces or hands.`
+  const prompt = backgroundPrompt(userText.replace(URL_RE, '').trim(), c, palette)
   // Se memoriza lo que escribió el usuario (o el tema elegido) para poder regenerar la imagen desde el editor
   const baseDesign = { ...design, bg: { ...design.bg, prompt: userText || c.title, scene: c.scene } }
   const context = userText || c.title
