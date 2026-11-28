@@ -248,9 +248,18 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
       return url ? shrinkImage(url) : null
     },
     apply: (next) => { setSheet(next.sheet); setPlatforms(next.platforms); setWhen(next.when) },
+    // Alicia va a publicar o programar lo del editor: se valida igual que con los botones y se entrega lista
+    prepare: async () => {
+      if (!validate(true)) return { error: t('Falta algo en el editor para poder publicarla: mira el aviso.') }
+      const missing = platforms.filter((p) => !accounts[p])
+      if (missing.length) return { error: t('Conecta primero: {p}', { p: missing.map((m) => PLATFORMS[m].name).join(', ') }) }
+      if (isVideo && saveCopy) downloadVideo()
+      const post = await build('draft')
+      return { post, close: () => { clearWip(); setDraft(null); onDone() } }
+    },
   }
   useEffect(() => {
-    const api = Object.fromEntries(['snapshot', 'image', 'apply'].map((k) => [k, (...args) => bridge.current[k](...args)]))
+    const api = Object.fromEntries(['snapshot', 'image', 'apply', 'prepare'].map((k) => [k, (...args) => bridge.current[k](...args)]))
     editorBridge.current = api
     return () => { if (editorBridge.current === api) editorBridge.current = null }
   }, [])

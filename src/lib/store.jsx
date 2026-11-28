@@ -292,7 +292,8 @@ export function AppProvider({ children }) {
 
   const publishNow = useCallback(async (id, { scheduled = false } = {}) => {
     const local = postsRef.current.find((p) => p.id === id)
-    if (!local || claiming.current.has(id)) return
+    // Devuelve 'done' (se intentó publicar), 'taken' (ya la tiene otra sesión) o 'unreached' (no se pudo ni empezar)
+    if (!local || claiming.current.has(id)) return 'taken'
     claiming.current.add(id)
     let post
     try {
@@ -302,13 +303,13 @@ export function AppProvider({ children }) {
       claiming.current.delete(id)
       setPosts((l) => [...l]) // vuelve a activar el guardado que se pausó durante la reserva
       if (!scheduled) notify(t('No se pudo publicar:') + ' ' + e.message, 'err')
-      return
+      return 'unreached'
     }
     if (!post) { // ya la tomó o publicó la otra sesión, o cambió
       claiming.current.delete(id)
       if (!scheduled) notify(t('Esta publicación ya se está publicando o ya se publicó desde otra sesión.'), 'err')
       refresh()
-      return
+      return 'taken'
     }
     syncedRef.current[id] = '' // obliga a guardar el resultado final
     setPosts((l) => l.map((p) => (p.id === id ? { ...post, status: 'publishing' } : p)))
@@ -334,6 +335,7 @@ export function AppProvider({ children }) {
     const demo = Object.values(results).some((r) => r.demo)
     if (allOk) notify(demo ? t('Publicado (modo demo: simulado)') : t('¡Publicado con éxito!'))
     else notify(t('Falló:') + ' ' + Object.entries(results).filter(([, r]) => !r.ok).map(([k, r]) => `${k}: ${r.error}`).join(', '), 'err')
+    return 'done'
   }, [notify, refresh])
 
   // Publicaciones que quedaron como fallidas o «publicando…» por un corte de conexión: se pregunta qué pasó de verdad.

@@ -4,6 +4,10 @@
 export const DEFAULT_TIMES = ['18:00', '12:00', '20:00', '10:00', '15:00', '09:00', '13:00', '17:00', '19:00', '21:00']
 const CALENDAR_DAYS = 35
 const MARGIN = 5 * 60000 // lo que se programa debe quedar al menos 5 minutos en el futuro
+export const SOON_MINUTES = 3
+
+/** Plan B cuando no se puede publicar al momento: unos minutos más adelante, en un minuto exacto. */
+export const soonTime = (now = Date.now()) => Math.ceil((now + SOON_MINUTES * 60000) / 60000) * 60000
 
 const pad = (n) => String(n).padStart(2, '0')
 export const dayString = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`

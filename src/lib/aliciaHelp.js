@@ -1,11 +1,11 @@
-// Lo que Alicia puede ver de la app y cómo se aplican los cambios que propone. Nunca publica ni borra.
+// Lo que Alicia puede ver de la app y cómo se aplican los cambios que propone. Aquí no se publica ni se borra nada.
 import { PLATFORMS } from './formats.js'
 import { composeCaption, normalizeTags, initialSheet, withContact } from './postSheet.js'
 import { dayString, timeString, slotTime, isPast } from './aliciaPlan.js'
 import { scheduledInMonth } from './plans.js'
 import { t } from './i18n.jsx'
 
-/** El editor abierto se anuncia aquí: { snapshot(), image(), apply(valores) }. null si no está en pantalla. */
+/** El editor abierto se anuncia aquí: { snapshot(), image(), apply(valores), prepare() }. null si no está en pantalla. */
 export const editorBridge = { current: null }
 
 /** Estados en los que se puede cambiar una publicación guardada. */

@@ -6,7 +6,7 @@ import { useApp } from '../lib/store.jsx'
 import { PLATFORMS, uid } from '../lib/formats.js'
 import { askAlicia, createPost, pickIgMusic } from '../lib/aliciaCreate.js'
 import { WhenPopover } from './WhenPicker.jsx'
-import { calendarLines, cleanItems, fillTimes, isPast, networksFor, slotTime, dayString, timeString } from '../lib/aliciaPlan.js'
+import { calendarLines, cleanItems, fillTimes, isPast, networksFor, slotTime, soonTime, dayString, timeString } from '../lib/aliciaPlan.js'
 import { fetchContent } from '../lib/content.js'
 import { contentUse } from '../lib/contentDraft.js'
 import { ANGLES } from '../lib/brand.js'
@@ -182,7 +182,7 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
   const v = ed.values
   const name = ed.target === 'editor' ? t('La publicación del editor') : post ? initialSheet(post.sheet, post.caption).title || post.caption.slice(0, 60) : t('Esta publicación ya no está.')
   return (
-    <li className={'ali-item ali-change' + (ed.before ? ' done' : '')}>
+    <li className={'ali-item ali-change' + (ed.before || ed.sent ? ' done' : '')}>
       <div className="ali-item-top">
         <span className="ali-thumb" aria-hidden="true">{post?.image ? <img src={post.image} alt="" /> : '✏️'}</span>
         <div className="ali-item-info">
@@ -192,19 +192,22 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
         <button type="button" className="icon-btn" disabled={busy} onClick={onRemove} title={t('Quitar')} aria-label={t('Quitar')}><Icon name="x" size={15} /></button>
       </div>
       <dl>
+        {v.send && <div><dt>{t('Acción')}</dt><dd>{v.send === 'now' ? t('Publicar ahora') : t('Programar')}</dd></div>}
         {FIELDS.filter(([k]) => v[k]).map(([k, label]) => <div key={k}><dt>{t(label)}</dt><dd>{v[k]}</dd></div>)}
         {v.networks.length > 0 && <div><dt>{t('Redes')}</dt><dd>{v.networks.map((p) => PLATFORMS[p]?.name || p).join(', ')}</dd></div>}
         {(v.date || v.time) && <div><dt>{t('Fecha')}</dt><dd>{[v.date, v.time].filter(Boolean).join(' · ')}</dd></div>}
       </dl>
       {ed.error && <p className="ali-warn">❌ {ed.error}</p>}
-      {ed.before ? (
+      {ed.sent ? (
+        <div className="ali-change-act"><span className="ali-done">✅ {ed.sent === 'now' ? t('Enviada a publicar.') : t('Quedó programada.')}</span></div>
+      ) : ed.before ? (
         <div className="ali-change-act">
           <span className="ali-done">✅ {ed.inEditor ? t('Aplicado en el editor: revisa y guarda, programa o publica.') : t('Cambio guardado.')}</span>
           <button type="button" className="btn ghost sm" disabled={busy} onClick={onUndo}>↩️ {t('Deshacer')}</button>
         </div>
       ) : (
         <div className="ali-change-act">
-          <button type="button" className="btn primary sm" disabled={busy} onClick={onApply}>✨ {t('Aplicar cambios')}</button>
+          <button type="button" className="btn primary sm" disabled={busy} onClick={onApply}>{v.send === 'now' ? `🚀 ${t('Publicar ahora')}` : v.send === 'schedule' ? `📅 ${t('Programar')}` : `✨ ${t('Aplicar cambios')}`}</button>
         </div>
       )}
     </li>
@@ -234,6 +237,7 @@ export default function Alicia({ page, onEdit }) {
   const [progress, setProgress] = useState(null) // { key, n, total, step } mientras se crean
   const [videos, setVideos] = useState(null) // videos libres de Contenido; null = sin cargar
   const stop = useRef(false)
+  const sending = useRef(new Set()) // lo que se está mandando a publicar, para no hacerlo dos veces
   const body = useRef(null)
   const postsRef = useRef(posts); postsRef.current = posts
   const busy = thinking || !!progress
@@ -304,7 +308,7 @@ export default function Alicia({ page, onEdit }) {
       const pending = items.filter((x) => !x.postId)
       const made = items.length - pending.length
       const history = msgs.filter((m) => m.who !== 'err').slice(-8).map((m) => `${m.who === 'me' ? 'Usuario' : 'Alicia'}: ${m.text}`)
-      if (made) history.push(`(Nota de la app: ya se crearon ${made} publicaciones. No puedes modificarlas; para eso está el botón «Ver y editar».)`)
+      if (made) history.push(`(Nota de la app: ya se crearon ${made} publicaciones y están en "posts". No las vuelvas a crear: para cambiarlas, publicarlas o programarlas usa "edit".)`)
       const editor = editorBridge.current?.snapshot() || null
       const picture = editor?.hasMedia ? await editorBridge.current.image().catch(() => null) : null
       const { context, refs } = appContext({ page, posts: postsRef.current, accounts, editor })
@@ -330,18 +334,20 @@ export default function Alicia({ page, onEdit }) {
       if (proposed.length) {
         setEdits(proposed)
         setFolded((f) => ({ ...f, edits: false }))
-        if (free_) job = () => proposed.forEach(apply)
+        if (free_) job = async () => { for (const e of proposed) await apply(e) }
       }
-      if (!clean.length) return
-      const taken = postsRef.current.filter((p) => p.status === 'scheduled').map((p) => p.scheduledAt)
-      const planned = fillTimes(clean, taken).map(({ networks, ...it }) => ({
-        ...it, key: uid(), asked: networks, platforms: networksFor(it.type, networks, accounts, access.limits.platforms),
-      }))
-      const next = assignVideos(planned, free || [], free_ ? [] : items)
-      setItems(next)
-      setFolded((f) => ({ ...f, plan: false }))
-      if (free_) job = () => run(next, r.publish === 'draft' ? null : r.publish)
-      if (made) say('ai', t('Las publicaciones que ya había creado siguen guardadas en Publicaciones. 📁'))
+      // Sin `return` aquí: lo que haya que hacer sola (`job`) se ejecuta al final, también si solo son cambios
+      if (clean.length) {
+        const taken = postsRef.current.filter((p) => p.status === 'scheduled').map((p) => p.scheduledAt)
+        const planned = fillTimes(clean, taken).map(({ networks, ...it }) => ({
+          ...it, key: uid(), asked: networks, platforms: networksFor(it.type, networks, accounts, access.limits.platforms),
+        }))
+        const next = assignVideos(planned, free || [], free_ ? [] : items)
+        setItems(next)
+        setFolded((f) => ({ ...f, plan: false }))
+        if (free_) job = () => run(next, r.publish === 'draft' ? null : r.publish)
+        if (made) say('ai', t('Las publicaciones que ya había creado siguen guardadas en Publicaciones. 📁'))
+      }
     } catch (e) {
       say('err', e.message)
       setDraft(message)
@@ -365,26 +371,55 @@ export default function Alicia({ page, onEdit }) {
   }
 
   const pending = items.filter((x) => !x.postId)
+  const clock = (ts) => timeString(new Date(ts))
+  const watchPost = (id) => setWatch((l) => [...l.filter((x) => x !== id), id].slice(-30))
+  const missingError = (platforms) => {
+    const missing = platforms.filter((p) => !accounts[p])
+    return missing.length ? t('Conecta primero: {p}', { p: missing.map((p) => PLATFORMS[p].name).join(', ') }) : null
+  }
+  /** Deja la publicación programada para `at`. Lanza un error si no se puede. */
+  const scheduleAt = (post, at) => {
+    if (!access.limits.scheduledPerMonth || scheduledInMonth(postsRef.current, at, post.id) >= access.limits.scheduledPerMonth) throw new Error(t('Tu plan no permite programar más publicaciones ese mes.'))
+    const next = { ...post, status: 'scheduled', scheduledAt: at }
+    savePost(next)
+    postsRef.current = [next, ...postsRef.current.filter((p) => p.id !== next.id)]
+    watchPost(next.id)
+  }
+  /** Publica ya. Si ni siquiera se puede empezar, la deja programada para unos minutos después y lo cuenta. */
+  const publishOrSoon = async (post) => {
+    savePost(post, { publishing: true })
+    postsRef.current = [post, ...postsRef.current.filter((p) => p.id !== post.id)]
+    await new Promise((r) => setTimeout(r, 150)) // el guardado se asienta antes de publicar
+    publishNow(post.id).then((result) => {
+      // Se avisa cómo terminó recién ahora: una que había fallado antes todavía figuraría como fallida
+      if (result !== 'unreached') { if (result === 'done') watchPost(post.id); return }
+      const at = soonTime()
+      try {
+        scheduleAt(post, at)
+        say('ai', t('⏳ No pude publicarla al instante, así que la programé para las {h}, en unos minutos. Deja la app abierta: desde ella se envía.', { h: clock(at) }))
+      } catch (e) { say('err', t('No pude publicarla ni programarla: {e}', { e: e.message })) }
+    })
+    return t('🚀 La estoy publicando ahora.')
+  }
+  /** Programa para `at`; si esa hora ya no alcanza, para unos minutos después. Devuelve el mensaje para el chat. */
+  const scheduleOrSoon = (post, at) => {
+    if (at > Date.now() + 30000) {
+      scheduleAt(post, at)
+      return t('📅 Programada para {w}. Deja la app abierta a esa hora: desde ella se envía.', { w: `${dayLabel(dayString(new Date(at)))} · ${clock(at)}` })
+    }
+    const soon = soonTime()
+    scheduleAt(post, soon)
+    return t('⏳ La hora pedida ya pasó, así que la programé para las {h}, en unos minutos. Deja la app abierta: desde ella se envía.', { h: clock(soon) })
+  }
+
   // Programa o publica sin preguntar lo que se acaba de crear en modo autoritario. Devuelve el mensaje para el chat.
   const launchNow = async (it, post, mode, wasFuture) => {
     const at = slotTime(it.date, it.time)
-    const when = `${dayLabel(it.date)} · ${it.time}`
-    const missing = post.platforms.filter((p) => !accounts[p])
-    if (missing.length) throw new Error(t('Conecta primero: {p}', { p: missing.map((p) => PLATFORMS[p].name).join(', ') }))
-    // Si la hora pedida llegó mientras se creaba, se publica ya; si ya había pasado al pedirlo, no se publica
-    const now = mode === 'now' || (wasFuture && at <= Date.now())
-    if (!now) {
-      if (!(at > Date.now())) throw new Error(t('Esa hora ya pasó: cámbiala para poder programarla.'))
-      if (!access.limits.scheduledPerMonth || scheduledInMonth(postsRef.current, at, post.id) >= access.limits.scheduledPerMonth) throw new Error(t('Tu plan no permite programar más publicaciones ese mes.'))
-      const next = { ...post, status: 'scheduled', scheduledAt: at }
-      savePost(next)
-      postsRef.current = postsRef.current.map((p) => (p.id === next.id ? next : p))
-      return t('📅 Programada para {w}. Deja la app abierta a esa hora: desde ella se envía.', { w: when })
-    }
-    savePost(post, { publishing: true })
-    await new Promise((r) => setTimeout(r, 150)) // el guardado se asienta antes de publicar
-    publishNow(post.id)
-    return t('🚀 La estoy publicando ahora.')
+    const missing = missingError(post.platforms)
+    if (missing) throw new Error(missing)
+    // Si la hora pedida llegó mientras se creaba, se publica ya; si ya había pasado al pedirlo, en unos minutos
+    if (mode === 'now' || (wasFuture && at <= Date.now())) return publishOrSoon(post)
+    return scheduleOrSoon(post, at)
   }
 
   /** Crea las publicaciones de `list`. Con `mode` ('schedule' | 'now') además las programa o publica sin preguntar. */
@@ -429,7 +464,6 @@ export default function Alicia({ page, onEdit }) {
         // Si se pulsó «Detener», lo ya creado queda como borrador
         if (mode && !stop.current) {
           const note = await launchNow(it, post, mode, slotTime(it.date, it.time) > requested)
-          setWatch((l) => [...l, post.id].slice(-30))
           say('ai', (igMusic ? t('🎵 Le puse «{m}».', { m: [igMusic.title, igMusic.artist].filter(Boolean).join(' · ') }) + ' ' : '') + note)
         }
       } catch (e) {
@@ -506,7 +540,61 @@ export default function Alicia({ page, onEdit }) {
       if (wip) localStorage.setItem(key, JSON.stringify({ ...wip, sheet: post.sheet, caption: post.caption, platforms: post.platforms, ...(post.scheduledAt ? { when: toWhen(post.scheduledAt) } : {}) }))
     } catch { /* ignore */ }
   }
+  /** Publica o programa una publicación que ya existe (la del editor o una guardada). */
+  const sendPost = async (ed) => {
+    const { send: mode, date, time } = ed.values
+    const lock = ed.key // una tarjeta enviada no se vuelve a enviar, ni con un doble clic
+    if (sending.current.has(lock)) return
+    sending.current.add(lock)
+    try {
+      const content = { ...ed.values, date: '', time: '' } // la hora se resuelve al programar, con su plan B
+      const changes = content.title || content.description || content.tags || content.networks.length
+      let post, close, planned
+      const live = editorFor(ed)
+      if (live) {
+        planned = live.when
+        if (changes) {
+          const r = planEdit({ sheet: live.sheet, platforms: live.platforms, when: live.when, mediaType: live.mediaType }, content, access)
+          if (r.error) throw new Error(r.error)
+          editorBridge.current.apply(r.next)
+          await new Promise((res) => setTimeout(res, 250)) // el editor termina de actualizarse
+        }
+        const ready = await editorBridge.current.prepare()
+        if (ready.error) throw new Error(ready.error)
+        post = ready.post; close = ready.close
+      } else {
+        if (ed.target === 'editor') throw new Error(t('Abre esa publicación en el editor para aplicar el cambio.'))
+        const saved = postsRef.current.find((p) => p.id === ed.target)
+        if (!saved) throw new Error(t('Esta publicación ya no está.'))
+        if (!EDITABLE.includes(saved.status)) throw new Error(t('Esa publicación ya no se puede cambiar.'))
+        const r = editSavedPost(saved, content, { access, accounts, posts: postsRef.current })
+        if (r.error) throw new Error(r.error)
+        post = r.post
+        planned = saved.scheduledAt ? toWhen(saved.scheduledAt) : ''
+      }
+      const missing = missingError(post.platforms)
+      if (missing) throw new Error(missing)
+      let note
+      if (mode === 'now') note = await publishOrSoon(post)
+      else {
+        const at = slotTime(date || planned.slice(0, 10), time || planned.slice(11, 16))
+        if (!Number.isFinite(at)) throw new Error(t('No entendí las fechas. Dime los días de otra forma.'))
+        note = scheduleOrSoon(post, at)
+      }
+      patchWip(postsRef.current.find((p) => p.id === post.id) || post)
+      close?.()
+      markEdit(ed.key, { error: null, sent: mode, before: null })
+      say('ai', note)
+    } catch (e) {
+      markEdit(ed.key, { error: e.message })
+      say('err', e.message)
+      sending.current.delete(lock) // no salió: se puede volver a intentar
+    }
+  }
+
   const apply = (ed) => {
+    if (ed.sent) return undefined
+    if (ed.values.send) return sendPost(ed)
     const live = editorFor(ed)
     if (live) {
       const r = planEdit({ sheet: live.sheet, platforms: live.platforms, when: live.when, mediaType: live.mediaType }, ed.values, access)
