@@ -16,16 +16,21 @@ const MAX_PUBLISHED = 6
 export const toWhen = (ts) => `${dayString(new Date(ts))}T${timeString(new Date(ts))}`
 
 /**
- * Resumen de la app para la IA. A cada publicación guardada se le da una referencia corta (p1, p2…);
- * `refs` permite volver de la referencia al id.
+ * Resumen de la app para la IA. La referencia de cada publicación guardada sale de su número (#3 es «p3»);
+ * `refs` permite volver de la referencia al id. Las de `onScreen` (ids) y las de `numbers` van siempre, por antiguas
+ * que sean.
  */
-export function appContext({ page, posts, accounts, editor }) {
+export function appContext({ page, posts, accounts, editor, onScreen = [], numbers = [] }) {
   const byDate = (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
-  const pending = posts.filter((p) => p.status !== 'published' && p.id !== editor?.id).sort(byDate).slice(0, MAX_PENDING)
-  const published = posts.filter((p) => p.status === 'published').sort((a, b) => (b.publishedAt || 0) - (a.publishedAt || 0)).slice(0, MAX_PUBLISHED)
+  const shown = new Set(onScreen)
+  const pinned = (p) => shown.has(p.id) || numbers.includes(p.num)
+  // Primero las que se están nombrando o viendo; el resto completa el cupo
+  const pickSome = (list, max) => [...list.filter(pinned), ...list.filter((p) => !pinned(p))].slice(0, max)
+  const pending = pickSome(posts.filter((p) => p.status !== 'published' && p.id !== editor?.id).sort(byDate), MAX_PENDING)
+  const published = pickSome(posts.filter((p) => p.status === 'published').sort((a, b) => (b.publishedAt || 0) - (a.publishedAt || 0)), MAX_PUBLISHED)
   const refs = {}
   const list = [...pending, ...published].map((p, i) => {
-    const ref = 'p' + (i + 1)
+    const ref = p.num ? 'p' + p.num : 's' + (i + 1)
     refs[ref] = p.id
     const sheet = initialSheet(p.sheet, p.caption)
     const at = p.status === 'published' ? p.publishedAt : p.scheduledAt
@@ -33,12 +38,13 @@ export function appContext({ page, posts, accounts, editor }) {
     // De lo ya publicado no se puede cambiar nada: basta con el comienzo
     const short = p.status === 'published'
     return {
-      ref, status: p.status, type: p.mediaType === 'video' ? 'video' : 'image', when: at ? toWhen(at) : '', networks: p.platforms,
+      ref, numero: p.num || null, enPantalla: shown.has(p.id), status: p.status, type: p.mediaType === 'video' ? 'video' : 'image', when: at ? toWhen(at) : '', networks: p.platforms,
       title: sheet.title, description: short ? sheet.description.slice(0, 160) : sheet.description, tags: sheet.tags, errors,
     }
   })
   const connected = Object.keys(accounts).map((id) => id + (accounts[id].real ? '' : ' (demo)'))
-  return { refs, context: { page, connected, posts: list, editor: editor ? { ...editor, id: undefined } : null } }
+  const open = editor ? { ...editor, id: undefined, numero: posts.find((p) => p.id === editor.id)?.num || null } : null
+  return { refs, context: { page, connected, posts: list, editor: open } }
 }
 
 /**

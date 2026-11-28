@@ -15,6 +15,7 @@ import { aiTextUsed, aiTextBump, scheduledInMonth } from '../lib/plans.js'
 import { appContext, editorBridge, planEdit, editSavedPost, toWhen, EDITABLE } from '../lib/aliciaHelp.js'
 import { composeCaption, sheetFromCaption, initialSheet } from '../lib/postSheet.js'
 import { canQuickEdit } from '../lib/designInfo.js'
+import { numbersIn, namedNumber } from '../lib/postNumbers.js'
 import { renderToDataURL } from '../lib/render.js'
 import AutoPost from './AutoPost.jsx'
 import { useSpeech } from '../lib/useSpeech.js'
@@ -164,7 +165,7 @@ function Item({ it, post, videos, busy, working, onChange, onRemove, onEdit, onQ
           ? <button type="button" className="ali-thumb" onClick={() => setViewing(true)} title={t('Vista previa')} aria-label={t('Vista previa')}>{picture}</button>
           : <span className="ali-thumb" aria-hidden="true">{picture}</span>}
         <div className="ali-item-info">
-          <b>{it.type === 'video' ? t('Video') : t('Imagen')} · {dayLabel(date)}</b>
+          <b>{post?.num && <span className="post-num">#{post.num}</span>}{it.type === 'video' ? t('Video') : t('Imagen')} · {dayLabel(date)}</b>
           <span className="ali-nets">{networks.map((p) => <span key={p} title={PLATFORMS[p].name}><PlatformLogo id={p} size={14} /></span>)}</span>
           {post && <StatusTag s={post.status} />}
           {created && !post && <small className="muted">{t('Esta publicación ya no está.')}</small>}
@@ -206,7 +207,7 @@ function Change({ ed, post, busy, onApply, onUndo, onRemove }) {
       <div className="ali-item-top">
         <span className="ali-thumb" aria-hidden="true">{post?.image ? <img src={post.image} alt="" /> : '✏️'}</span>
         <div className="ali-item-info">
-          <b>{name}</b>
+          <b>{post?.num && <span className="post-num">#{post.num}</span>}{name}</b>
           {post && <StatusTag s={post.status} />}
         </div>
         <button type="button" className="icon-btn" disabled={busy} onClick={onRemove} title={t('Quitar')} aria-label={t('Quitar')}><Icon name="x" size={15} /></button>
@@ -338,7 +339,7 @@ export default function Alicia({ page, onEdit }) {
       if (made) history.push(`(Nota de la app: ya se crearon ${made} publicaciones y están en "posts". No las vuelvas a crear: para cambiarlas, publicarlas o programarlas usa "edit".)`)
       const editor = editorBridge.current?.snapshot() || null
       const picture = editor?.hasMedia ? await editorBridge.current.image().catch(() => null) : null
-      const { context, refs } = appContext({ page, posts: postsRef.current, accounts, editor })
+      const { context, refs } = appContext({ page, posts: postsRef.current, accounts, editor, onScreen: items.map((x) => x.postId).filter(Boolean), numbers: numbersIn(message) })
       const r = await askAlicia({
         context, image: picture, auto,
         message, history, topics: TOPICS, freeVideos: free?.length || 0,
@@ -353,6 +354,10 @@ export default function Alicia({ page, onEdit }) {
         // Una versión nueva siempre la elige el usuario: nunca se publica ni se programa junto con ella
         values: { ...values, networks: values.networks || [], ...(values.rebuild ? { title: '', description: '', tags: '', date: '', time: '', networks: [], send: '', request: message } : {}) },
       })).filter((e) => e.target)
+      // Si el usuario nombró una por su número («la publicación 3»), manda ese número aunque la IA haya elegido otra
+      const num = namedNumber(message)
+      const named = num ? postsRef.current.find((p) => p.num === num) : null
+      if (named && proposed.length === 1) Object.assign(proposed[0], { target: named.id === editor?.id ? 'editor' : named.id, editorId: editor?.id })
       if (r.action === 'edit' && !proposed.length) throw new Error(t('No supe qué publicación cambiar. Dime cuál es.'))
       if (r.action === 'plan' && !clean.length) throw new Error(t('No entendí las fechas. Dime los días de otra forma.'))
       say('ai', r.reply || (proposed.length ? t('Te propongo estos cambios. Revísalos antes de aplicarlos.') : t('Este es el plan. Revísalo antes de crear las publicaciones.')))
@@ -461,6 +466,7 @@ export default function Alicia({ page, onEdit }) {
     // La pantalla se mantiene encendida: si el teléfono se bloquea, se corta la creación
     const awake = await navigator.wakeLock?.request('screen').catch(() => null)
     let done = 0
+    const numbered = [] // números de las creadas, para avisarlos al terminar
     for (let i = 0; i < queue.length && !stop.current; i++) {
       const it = queue[i]
       const onStep = (step) => setProgress({ key: it.key, n: i + 1, total: queue.length, step })
@@ -486,15 +492,16 @@ export default function Alicia({ page, onEdit }) {
         const made = await createPost({ type: it.type, id, topic: it.topic, platforms: it.platforms, scheduledAt: slotTime(it.date, it.time), content, withPhoto, onStep })
         const post = igMusic ? { ...made, igMusic } : made
         if (stop.current === 'unmounted') return
-        savePost(post)
-        postsRef.current = [post, ...postsRef.current] // para que el siguiente video no repita este
+        const saved = savePost(post)
+        postsRef.current = [saved, ...postsRef.current] // para que el siguiente video no repita este
         aiTextBump(session.id)
-        patch(it.key, { postId: post.id })
+        patch(it.key, { postId: saved.id })
+        numbered.push('#' + saved.num)
         done++
         // Si se pulsó «Detener», lo ya creado queda como borrador
         if (mode && !stop.current) {
-          const note = await launchNow(it, post, mode, slotTime(it.date, it.time) > requested)
-          say('ai', (igMusic ? t('🎵 Le puse «{m}».', { m: [igMusic.title, igMusic.artist].filter(Boolean).join(' · ') }) + ' ' : '') + note)
+          const note = await launchNow(it, saved, mode, slotTime(it.date, it.time) > requested)
+          say('ai', `#${saved.num} · ` + (igMusic ? t('🎵 Le puse «{m}».', { m: [igMusic.title, igMusic.artist].filter(Boolean).join(' · ') }) + ' ' : '') + note)
         }
       } catch (e) {
         const message = e?.message || String(e)
@@ -506,7 +513,7 @@ export default function Alicia({ page, onEdit }) {
     setProgress(null)
     setVideos(null)
     if (!done) say('ai', t('No pude crear las publicaciones. 😕 Mira el aviso de cada una y vuelve a intentarlo.'))
-    else if (!mode) say('ai', t('¡Listo! ✨ Creé {n} de {total} como borrador. Revísalas y, cuando quieras, pulsa «Programar todo».', { n: done, total: queue.length }))
+    else if (!mode) say('ai', t('¡Listo! ✨ Creé {n} de {total} como borrador. Revísalas y, cuando quieras, pulsa «Programar todo».', { n: done, total: queue.length }) + ' ' + t('Son: {list}. Nómbralas por su número para pedirme cambios.', { list: numbered.join(', ') }))
     notify(t('Alicia terminó: {n} de {total} publicaciones creadas.', { n: done, total: queue.length }), done ? 'ok' : 'err')
   }
   const create = () => (busy ? undefined : run(pending))
@@ -657,7 +664,8 @@ export default function Alicia({ page, onEdit }) {
         patchWip(next, { design: next.design })
       }
       if (editKey) markEdit(editKey, { error: null, rebuilt: true, inEditor })
-      say('ai', inEditor ? t('✨ Puse la nueva versión en el editor: revisa y guarda, programa o publica.') : t('✨ Guardé la nueva versión de la publicación.'))
+      const tag = postsRef.current.find((p) => p.id === target)?.num
+      say('ai', (tag ? `#${tag} · ` : '') + (inEditor ? t('✨ Puse la nueva versión en el editor: revisa y guarda, programa o publica.') : t('✨ Guardé la nueva versión de la publicación.')))
     } catch (e) {
       if (editKey) markEdit(editKey, { error: e.message })
       say('err', e.message)

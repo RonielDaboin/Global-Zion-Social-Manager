@@ -194,7 +194,7 @@ export default function PostPreview({ p, onClose, actions }) {
           {tab === 'email' && <Email {...props} prov={prov} />}
         </div>
         {r && <small className="muted">{r.ok ? '✅' : '❌'} {r.demo ? t('modo demo') : ''}{r.error ? ' ' + r.error : ''}</small>}
-        <small className="muted">{p.author && <>👤 {p.author.name} · </>}{t('Simulación de cómo se ve la publicación')}</small>
+        <small className="muted">{p.num && <><span className="post-num">#{p.num}</span> </>}{p.author && <>👤 {p.author.name} · </>}{t('Simulación de cómo se ve la publicación')}</small>
         {actions && <div className="row">{actions(close)}</div>}
         {zoom && <ImageZoom src={zoom} onClose={() => setZoom(null)} />}
       </div>

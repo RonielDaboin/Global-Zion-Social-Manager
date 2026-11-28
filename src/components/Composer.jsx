@@ -291,7 +291,7 @@ export default function Composer({ onDone, onDiscard, onOpen }) {
 
   return (
     <div className="page cmp">
-      <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}</h1><p>{t('Elige imagen o video, escribe el texto y publica o programa.')}</p></div>
+      <header className="ph row between"><div><h1>{editing ? t('Editar publicación') : t('Crear publicación')}{posts.find((p) => p.id === id)?.num ? ' #' + posts.find((p) => p.id === id).num : ''}</h1><p>{t('Elige imagen o video, escribe el texto y publica o programa.')}</p></div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="btn primary auto-btn" onClick={() => (lim.autoPost ? setAutoOpen('choose') : openPlans(t('La publicación automática con IA está disponible en el plan Premium.')))}>✨ {t('Crear con IA')}{!lim.autoPost && <LockTag plan="PREMIUM" />}</button>
           <button className="btn ghost sm" onClick={discard}><Icon name="trash" size={14} /> {editing ? t('Descartar cambios') : t('Empezar de cero')}</button>

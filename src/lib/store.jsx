@@ -9,6 +9,7 @@ import { checkAccess, workspaceId } from './workspace.js'
 import { accessOf } from './plans.js'
 import { cleanupContent, markContentPublished } from './content.js'
 import { readPostCache, writePostCache } from './postCache.js'
+import { fillNumbers, maxNum } from './postNumbers.js'
 import { sendAlert, syncPush } from './push.js'
 
 const Ctx = createContext(null)
@@ -154,6 +155,24 @@ export function AppProvider({ children }) {
     if (loadedFor.current === key) writePostCache(key, posts).then((ok) => setStorageFull(!ok))
   }, [posts, key])
 
+  // Número fijo de cada publicación: se recuerda el último entregado para no repetirlo si se borra la más nueva
+  const lastNum = useRef(0)
+  const numberFloor = () => Math.max(lastNum.current, read(`gz_postnum_${key}`, 0))
+  const keepNumber = (n) => { if (n > numberFloor()) write(`gz_postnum_${key}`, n); lastNum.current = Math.max(lastNum.current, n) }
+  useEffect(() => { lastNum.current = 0 }, [key])
+  // Se numeran las que no tienen (las anteriores a la numeración). Solo con la lista de la nube ya cargada.
+  useEffect(() => {
+    if (!cloudReady.current) return
+    // No se toca lo que se está publicando ni lo que está por salir: guardarlo ahora podría pisar esa reserva
+    const busy = (p) => p.status === 'publishing' || claiming.current.has(p.id) || (p.status === 'scheduled' && p.scheduledAt < Date.now() + 120000)
+    const next = fillNumbers(posts, numberFloor(), busy)
+    if (next === posts) { keepNumber(maxNum(posts)); return }
+    keepNumber(maxNum(next))
+    const given = new Map(next.map((p) => [p.id, p.num]))
+    setPosts((cur) => cur.map((p) => (given.get(p.id) && given.get(p.id) !== p.num ? { ...p, num: given.get(p.id) } : p)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts])
+
   // Guarda en Supabase lo que cambió (con una pequeña espera para agrupar cambios)
   useEffect(() => {
     if (!cloudReady.current || !session) return
@@ -273,12 +292,17 @@ export function AppProvider({ children }) {
   const savePost = (p0, { publishing = false } = {}) => {
     // Pasar una programada a borrador cancela la publicación
     if (!publishing && p0.status === 'draft' && postsRef.current.find((x) => x.id === p0.id)?.status === 'scheduled') sendAlert('cancelled', p0)
-    const p = p0.author || !me ? p0 : { ...p0, author: me } // quién creó la publicación
+    const signed = p0.author || !me ? p0 : { ...p0, author: me } // quién creó la publicación
+    // El editor arma la publicación de nuevo: el número se conserva de la guardada
+    const num = signed.num || postsRef.current.find((x) => x.id === signed.id)?.num || Math.max(numberFloor(), maxNum(postsRef.current)) + 1
+    keepNumber(num)
+    const p = { ...signed, num }
     setPosts((list) => {
       const i = list.findIndex((x) => x.id === p.id)
       if (i >= 0) { const n = [...list]; n[i] = p; return n }
       return [p, ...list]
     })
+    return p
   }
   const deletePost = (id) => {
     const gone = postsRef.current.find((p) => p.id === id)

@@ -14,7 +14,8 @@ const toRow = (r) => {
 export async function fetchPosts() {
   const { data, error } = await supabase.from('posts').select('data,updated_at').order('updated_at', { ascending: false })
   if (error) throw new Error(error.message)
-  return (data || []).map(toRow)
+  // Las guardadas de una sola vez (p. ej. al numerarlas) comparten fecha: entre ellas, primero la más nueva
+  return (data || []).map(toRow).sort((a, b) => b.version - a.version || (b.post.createdAt || 0) - (a.post.createdAt || 0))
 }
 
 /** Solo id y versión de cada publicación: sirve para detectar cambios sin volver a descargar las imágenes. */

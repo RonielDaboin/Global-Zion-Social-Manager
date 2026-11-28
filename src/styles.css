@@ -2680,6 +2680,7 @@ button.ali-thumb { padding: 0; border: 0; color: inherit; cursor: pointer; }
 .ali-warn { font-size: 12.5px; color: var(--red); overflow-wrap: anywhere; }
 .ali-item > .btn { justify-self: start; }
 .ali-item-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.post-num { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; line-height: 1.5; color: #fff; background: linear-gradient(120deg, #3b92e0, #6a5be0 55%, #c2339b); }
 .quick-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 
 .ali-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--card) 78%, transparent); }

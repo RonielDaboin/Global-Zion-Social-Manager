@@ -1248,6 +1248,7 @@ const EN = {
   'Ver la nueva versión': 'See the new version',
   '✨ Puse la nueva versión en el editor: revisa y guarda, programa o publica.': '✨ I put the new version in the editor: review it, then save, schedule or publish.',
   '✨ Guardé la nueva versión de la publicación.': '✨ I saved the new version of the post.',
+  'Son: {list}. Nómbralas por su número para pedirme cambios.': 'They are: {list}. Use their number to ask me for changes.',
   'Ver y editar': 'View and edit',
   'No entendí las fechas. Dime los días de otra forma.': 'I didn’t get the dates. Tell me the days another way.',
   'Este es el plan. Revísalo antes de crear las publicaciones.': 'Here is the plan. Check it before creating the posts.',

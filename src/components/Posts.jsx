@@ -20,7 +20,7 @@ export function PostCard({ p, edit }) {
       <div className="thumb"><img src={p.image} alt="" />{p.mediaType === 'video' && <span className="vbadge">▶ {t('Video')}</span>}</div>
       <div className="pbody">
         <div className="row between">
-          <div className="row">{p.platforms.map((x) => <PlatformBadge key={x} id={x} small />)}</div>
+          <div className="row">{p.num && <span className="post-num">#{p.num}</span>}{p.platforms.map((x) => <PlatformBadge key={x} id={x} small />)}</div>
           <StatusTag s={p.status} />
         </div>
         <p className="cap">{p.caption || <i className="muted">{t('Sin texto')}</i>}</p>
